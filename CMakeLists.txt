@@ -8,9 +8,7 @@ project(mainbot)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  odrive_ros
-  realsense2_camera
-  rospy
+  roscpp
   std_msgs
 )
 
@@ -21,7 +19,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
-catkin_python_setup()
+# catkin_python_setup()
 
 ################################################
 ## Declare ROS messages, services and actions ##
@@ -106,7 +104,7 @@ catkin_python_setup()
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES mainbot
-#  CATKIN_DEPENDS odrive_ros realsense2_camera rospy std_msgs
+#  CATKIN_DEPENDS roscpp std_msgs
 #  DEPENDS system_lib
 )
 
@@ -135,6 +133,7 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/mainbot_node.cpp)
+add_executable(${PROJECT_NAME}_talker src/talker.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -150,6 +149,9 @@ include_directories(
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
+target_link_libraries(${PROJECT_NAME}_talker
+  ${catkin_LIBRARIES}
+)
 
 #############
 ## Install ##
