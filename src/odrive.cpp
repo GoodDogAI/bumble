@@ -10,6 +10,29 @@
 #include <errno.h> // Error integer and strerror() function
 #include <termios.h> // Contains POSIX terminal control definitions
 #include <unistd.h> // write(), read(), close()
+#include <math.h>
+
+float send_float_command(int fd, const std::string& command) {
+  int write_res = write(fd, command.c_str(), command.length());
+
+  if (write_res != command.length()) {
+    ROS_ERROR("Error sending float command");
+    return NAN;
+  }
+
+  std::string response = "";
+  char buf;
+  int num_read;
+
+  while(num_read = read(fd, &buf, 1)) {
+    if (buf == '\n')
+      break;
+
+    response += buf;
+  }
+
+  return std::stof(response);
+}
 
 
 /**
@@ -51,26 +74,38 @@ int main(int argc, char **argv)
 
   ros::Rate loop_rate(10);
 
-  std::fstream serial_port;
-  serial_port.open("/dev/ttyACM0", std::ios::in | std::ios::out);
 
-    if (!serial_port.is_open()) {
+  int serial_port = open("/dev/ttyACM0", O_RDWR);
+
+  if (serial_port < 0) {
       ROS_ERROR("Error %i from open: %s\n", errno, strerror(errno));
       return errno;
   }
 
+  struct termios tty;
+  memset(&tty, 0, sizeof tty);
+
+  // Read in existing settings, and handle any error
+  if(tcgetattr(serial_port, &tty) != 0) {
+      ROS_ERROR("Error %i from tcgetattr: %s\n", errno, strerror(errno));
+      return errno;
+  }
+
+  cfsetispeed(&tty, B115200);
+  cfsetospeed(&tty, B115200);
+
+  // Save tty settings, also checking for error
+  if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
+      ROS_ERROR("Error %i from tcsetattr: %s\n", errno, strerror(errno));
+      return errno;
+  }
+
+
   while (ros::ok())
   {
-    float vbus_voltage = 0.0;
-
-    serial_port << "r vbus_voltage" << std::endl;
-    serial_port >> vbus_voltage;
-
-        ROS_INFO("First read message: %f", vbus_voltage);
+    float vbus_voltage = send_float_command(serial_port, "r vbus_voltage\n");
 
 
-    serial_port << "r vbus_voltage" << std::endl;
-    serial_port >> vbus_voltage;
 
     std_msgs::Float32 vbus_msg;
     vbus_msg.data = vbus_voltage;
