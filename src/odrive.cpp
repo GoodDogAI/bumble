@@ -13,7 +13,7 @@
 #include <unistd.h> // write(), read(), close()
 #include <math.h>
 
-#define MAX_SPEED 50.0
+#define MAX_SPEED 100.0
 static volatile float vel_left, vel_right;
 
 
@@ -163,7 +163,7 @@ int main(int argc, char **argv)
     //ROS_INFO("Publishing message: %f", vbus_voltage);
     vbus_pub.publish(vbus_msg);
 
-    ROS_INFO("Sending motor vels %f %f", vel_left, vel_right);
+    //ROS_INFO("Sending motor vels %f %f", vel_left, vel_right);
 
     std::string cmd;
     cmd = "v 0 " + std::to_string(vel_left) + "\n";
