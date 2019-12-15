@@ -12,6 +12,36 @@
 #include <unistd.h> // write(), read(), close()
 #include <math.h>
 
+void send_raw_command(int fd, const std::string& command) {
+  int write_res = write(fd, command.c_str(), command.length());
+
+  if (write_res != command.length()) {
+    ROS_ERROR("Error sending float command");
+  }
+}
+
+int send_int_command(int fd, const std::string& command) {
+  int write_res = write(fd, command.c_str(), command.length());
+
+  if (write_res != command.length()) {
+    ROS_ERROR("Error sending int command");
+    return -1;
+  }
+
+  std::string response = "";
+  char buf;
+  int num_read;
+
+  while(num_read = read(fd, &buf, 1)) {
+    if (buf == '\n')
+      break;
+
+    response += buf;
+  }
+
+  return std::stoi(response);
+}
+
 float send_float_command(int fd, const std::string& command) {
   int write_res = write(fd, command.c_str(), command.length());
 
@@ -100,18 +130,23 @@ int main(int argc, char **argv)
       return errno;
   }
 
+  //Put motors into AXIS_STATE_CLOSED_LOOP_CONTROL
+  send_raw_command(serial_port, "w axis0.requested_state 8\n");
+  send_raw_command(serial_port, "w axis1.requested_state 8\n");
 
   while (ros::ok())
   {
+    // Read and publish the vbus main voltage
     float vbus_voltage = send_float_command(serial_port, "r vbus_voltage\n");
-
-
 
     std_msgs::Float32 vbus_msg;
     vbus_msg.data = vbus_voltage;
     ROS_INFO("Publishing message: %f", vbus_voltage);
 
     vbus_pub.publish(vbus_msg);
+
+    send_raw_command(serial_port, "v 0 50\n");
+    send_raw_command(serial_port, "v 1 -50\n");
 
     ros::spinOnce();
 
