@@ -1,6 +1,7 @@
 #include "ros/ros.h"
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
+#include "geometry_msgs/Twist.h"
 
 #include <iostream>
 #include <fstream>
@@ -11,6 +12,10 @@
 #include <termios.h> // Contains POSIX terminal control definitions
 #include <unistd.h> // write(), read(), close()
 #include <math.h>
+
+#define MAX_SPEED 50.0
+static volatile float vel_left, vel_right;
+
 
 void send_raw_command(int fd, const std::string& command) {
   int write_res = write(fd, command.c_str(), command.length());
@@ -64,6 +69,18 @@ float send_float_command(int fd, const std::string& command) {
   return std::stof(response);
 }
 
+
+void twistCallback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  ROS_INFO("Linear %f, %f, %f,  Ang %f, %f, %f", 
+    msg->linear.x, msg->linear.y, msg->linear.z,
+    msg->angular.x, msg->angular.y, msg->angular.z);
+
+  float ang = msg->angular.z;
+
+  vel_left = -(msg->linear.x - ang) * MAX_SPEED;
+  vel_right = (msg->linear.x + ang) * MAX_SPEED;
+}
 
 /**
  * This tutorial demonstrates simple sending of messages over the ROS system.
@@ -134,6 +151,8 @@ int main(int argc, char **argv)
   send_raw_command(serial_port, "w axis0.requested_state 8\n");
   send_raw_command(serial_port, "w axis1.requested_state 8\n");
 
+  ros::Subscriber sub = n.subscribe("cmd_vel", 10, twistCallback);
+
   while (ros::ok())
   {
     // Read and publish the vbus main voltage
@@ -141,12 +160,17 @@ int main(int argc, char **argv)
 
     std_msgs::Float32 vbus_msg;
     vbus_msg.data = vbus_voltage;
-    ROS_INFO("Publishing message: %f", vbus_voltage);
-
+    //ROS_INFO("Publishing message: %f", vbus_voltage);
     vbus_pub.publish(vbus_msg);
 
-    send_raw_command(serial_port, "v 0 50\n");
-    send_raw_command(serial_port, "v 1 -50\n");
+    ROS_INFO("Sending motor vels %f %f", vel_left, vel_right);
+
+    std::string cmd;
+    cmd = "v 0 " + std::to_string(vel_left) + "\n";
+    send_raw_command(serial_port, cmd.c_str());
+
+    cmd = "v 1 " + std::to_string(vel_right) + "\n";
+    send_raw_command(serial_port, cmd.c_str());
 
     ros::spinOnce();
 
