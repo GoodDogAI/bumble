@@ -15,6 +15,7 @@
 
 #define MAX_SPEED 50.0
 static volatile float vel_left, vel_right;
+ros::Time last_received;
 
 
 void send_raw_command(int fd, const std::string& command) {
@@ -80,10 +81,13 @@ void twistCallback(const geometry_msgs::Twist::ConstPtr& msg)
 
   vel_left = -(msg->linear.x - ang) * MAX_SPEED;
   vel_right = (msg->linear.x + ang) * MAX_SPEED;
+
+  last_received = ros::Time::now();
 }
 
 /**
- * This tutorial demonstrates simple sending of messages over the ROS system.
+ * This node provides a simple interface to the ODrive module, it accepts cmd_vel messages to drive the motors,
+ and publishes /vbus to report the current battery voltage
  */
 int main(int argc, char **argv)
 {
@@ -99,6 +103,10 @@ int main(int argc, char **argv)
    * NodeHandle destructed will close down the node.
    */
   ros::NodeHandle n;
+
+  // Set the last message received time so we know if we stop getting messages and have to 
+  // shut down the motors.
+  last_received = ros::Time::now();
 
   /**
    * The advertise() function is how you tell ROS that you want to
@@ -153,6 +161,8 @@ int main(int argc, char **argv)
 
   ros::Subscriber sub = n.subscribe("cmd_vel", 10, twistCallback);
 
+  ROS_INFO("Successfully started odrive communications");
+
   while (ros::ok())
   {
     // Read and publish the vbus main voltage
@@ -160,11 +170,16 @@ int main(int argc, char **argv)
 
     std_msgs::Float32 vbus_msg;
     vbus_msg.data = vbus_voltage;
-    //ROS_INFO("Publishing message: %f", vbus_voltage);
     vbus_pub.publish(vbus_msg);
 
-    //ROS_INFO("Sending motor vels %f %f", vel_left, vel_right);
+    // If you haven't received a message in the last second, then stop the motors
+    if (ros::Time::now() - last_received > ros::Duration(1) && (vel_left || vel_right)) {
+      ROS_WARN("Didn't receive a message for the past second, shutting down motors");
+      vel_left = vel_right = 0;
+    } 
 
+
+    //ROS_INFO("Sending motor vels %f %f", vel_left, vel_right);
     std::string cmd;
     cmd = "v 0 " + std::to_string(vel_left) + "\n";
     send_raw_command(serial_port, cmd.c_str());
