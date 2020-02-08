@@ -14,6 +14,7 @@
 #include <math.h>
 
 #define MAX_SPEED 50.0
+static volatile bool motors_enabled;
 static volatile float vel_left, vel_right;
 ros::Time last_received;
 
@@ -155,9 +156,6 @@ int main(int argc, char **argv)
       return errno;
   }
 
-  //Put motors into AXIS_STATE_CLOSED_LOOP_CONTROL
-  send_raw_command(serial_port, "w axis0.requested_state 8\n");
-  send_raw_command(serial_port, "w axis1.requested_state 8\n");
 
   ros::Subscriber sub = n.subscribe("cmd_vel", 10, twistCallback);
 
@@ -173,10 +171,26 @@ int main(int argc, char **argv)
     vbus_pub.publish(vbus_msg);
 
     // If you haven't received a message in the last second, then stop the motors
-    if (ros::Time::now() - last_received > ros::Duration(1) && (vel_left || vel_right)) {
-      ROS_WARN("Didn't receive a message for the past second, shutting down motors");
-      vel_left = vel_right = 0;
+    if (ros::Time::now() - last_received > ros::Duration(1)) {
+      if (motors_enabled) {
+        ROS_WARN("Didn't receive a message for the past second, shutting down motors");
+        vel_left = vel_right = 0;
+
+        send_raw_command(serial_port, "w axis0.requested_state 1\n");
+        send_raw_command(serial_port, "w axis1.requested_state 1\n");
+        motors_enabled = false;
+      }
     } 
+    else {
+      if (!motors_enabled) {
+        ROS_INFO("Received message, enabling motors");
+
+        //Put motors into AXIS_STATE_CLOSED_LOOP_CONTROL
+        send_raw_command(serial_port, "w axis0.requested_state 8\n");
+        send_raw_command(serial_port, "w axis1.requested_state 8\n");
+        motors_enabled = true;
+      }
+    }
 
 
     //ROS_INFO("Sending motor vels %f %f", vel_left, vel_right);
@@ -192,6 +206,9 @@ int main(int argc, char **argv)
     loop_rate.sleep();
   }
 
+  // Disable motors when we quit the program
+  send_raw_command(serial_port, "w axis0.requested_state 1\n");
+  send_raw_command(serial_port, "w axis1.requested_state 1\n");
 
   return 0;
 }

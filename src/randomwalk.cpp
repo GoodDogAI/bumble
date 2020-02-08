@@ -8,9 +8,7 @@
 
 #include <math.h>
 
-#define MAX_SPEED 50.0
-static volatile float vel_left, vel_right;
-
+#define MAX_SPEED 0.50
 
 /**
  * This code just drive the robot around randomly, for the purposes of initializing reinforcement learning training.
@@ -32,16 +30,27 @@ int main(int argc, char **argv)
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
 
-
   ros::Rate loop_rate(20);
 
+  ros::Time recalc_means = ros::Time::now();
 
+  float forward_mean = 0, forward_var = 0;
+  float angular_mean = 0, angular_var = 0;
 
   while (ros::ok())
   {
+    //Every so often, pick a new mean/variance for the movement parameters
+      if (ros::Time::now() - recalc_means > ros::Duration(1)) {
+      forward_mean = MAX_SPEED * (2 * double(rand())/double(RAND_MAX) - 1);
+      angular_mean = MAX_SPEED * (2 * double(rand())/double(RAND_MAX) - 1);
+      recalc_means = ros::Time::now();
+    } 
+
+
     geometry_msgs::Twist msg;
-    msg.linear.x = 2 * MAX_SPEED * double(rand())/double(RAND_MAX) - MAX_SPEED;
-    msg.angular.z = 2*double(rand())/double(RAND_MAX) - 1;
+
+    msg.linear.x = forward_mean;
+    msg.angular.z = angular_mean;
 
     cmd_vel_pub.publish(msg);
 
