@@ -13,7 +13,7 @@
 #include <unistd.h> // write(), read(), close()
 #include <math.h>
 
-#define MAX_SPEED 100.0
+#define MAX_SPEED 50.0
 static volatile float vel_left, vel_right;
 
 
