@@ -4,6 +4,10 @@ project(mainbot)
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
 
+## Set the path of pytorch that you extracted to your home folder
+set(CMAKE_PREFIX_PATH $ENV{HOME}/libtorch)
+find_package(Torch REQUIRED)
+
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
