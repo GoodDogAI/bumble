@@ -5,7 +5,16 @@ project(mainbot)
 # add_compile_options(-std=c++11)
 
 ## Set the path of pytorch that you extracted to your home folder
-set(CMAKE_PREFIX_PATH $ENV{HOME}/libtorch)
+##set(CMAKE_PREFIX_PATH $ENV{HOME}/pytorch/torch)
+
+## Add these CMAKE configs to work with a custom-built pytorch rather than
+## the prepackaged one: https://github.com/facebookresearch/Detectron/issues/715
+set(ATen_DIR "$ENV{HOME}/pytorch/torch/share/cmake/ATen/")
+set(Caffe2_DIR "$ENV{HOME}/pytorch/torch/share/cmake/Caffe2/")
+set(Gloo_DIR "$ENV{HOME}/pytorch/torch/share/cmake/Gloo/")
+set(tensorpipe_DIR "$ENV{HOME}/pytorch/torch/share/cmake/tensorpipe/")
+set(Torch_DIR "$ENV{HOME}/pytorch/torch/share/cmake/Torch/")
+##include_directories("$ENV{HOME}/pytorch/torch/lib/include")
 find_package(Torch REQUIRED)
 
 ## Find catkin macros and libraries
@@ -139,12 +148,16 @@ include_directories(
 # add_executable(${PROJECT_NAME}_node src/mainbot_node.cpp)
 add_executable(odrive src/odrive.cpp)
 add_executable(randomwalk src/randomwalk.cpp)
+add_executable(brain src/brain.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use
 ## e.g. "rosrun someones_pkg node" instead of "rosrun someones_pkg someones_pkg_node"
 # set_target_properties(${PROJECT_NAME}_node PROPERTIES OUTPUT_NAME node PREFIX "")
+
+# Set CXX standard to support libtorch ABI
+set_property(TARGET brain PROPERTY CXX_STANDARD 14)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
@@ -159,6 +172,10 @@ target_link_libraries(odrive
 )
 target_link_libraries(randomwalk
   ${catkin_LIBRARIES}
+)
+target_link_libraries(brain
+  ${catkin_LIBRARIES}
+  "${TORCH_LIBRARIES}"
 )
 
 #############
@@ -215,3 +232,4 @@ target_link_libraries(randomwalk
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
+
