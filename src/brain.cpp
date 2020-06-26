@@ -17,6 +17,17 @@
 #define PAN_ID 11
 
 
+struct Net : torch::nn::Module {
+  Net() : linear(register_module("linear", torch::nn::Linear(120, 160))) {
+
+  }
+
+  torch::Tensor forward(torch::Tensor input) {
+    return linear(input);
+  }
+
+  torch::nn::Linear linear;
+};
 
 /**
  * This code just drive the robot around randomly, for the purposes of initializing reinforcement learning training.
@@ -48,24 +59,68 @@ int main(int argc, char **argv)
   std::random_device rd;  //Will be used to obtain a seed for the random number engine
   std::mt19937 gen(rd());
 
-  while (ros::ok())
-  {
-    geometry_msgs::Twist msg;
+  Net net;
+torch::Device device = torch::kCPU;
+if (torch::cuda::is_available()) {
+  std::cout << "CUDA is available! Training on GPU." << std::endl;
+  device = torch::kCUDA;
+}
+ torch::nn::Sequential discriminator(
+  // Layer 1
+  torch::nn::Conv2d(
+      torch::nn::Conv2dOptions(1, 64, 4).stride(2).padding(1).bias(false)),
+  torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2)),
+  // Layer 2
+  torch::nn::Conv2d(
+      torch::nn::Conv2dOptions(64, 128, 4).stride(2).padding(1).bias(false)),
+  torch::nn::BatchNorm2d(128),
+  torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2)),
+  // Layer 3
+  torch::nn::Conv2d(
+      torch::nn::Conv2dOptions(128, 256, 4).stride(2).padding(1).bias(false)),
+  torch::nn::BatchNorm2d(256),
+  torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2)),
+  // Layer 4
+  torch::nn::Conv2d(
+      torch::nn::Conv2dOptions(256, 1, 3).stride(1).padding(0).bias(false)),
+  torch::nn::Sigmoid());
 
-    msg.linear.x = forward_mean;
-    msg.angular.z = angular_mean;
+ discriminator->to(device);
 
-    cmd_vel_pub.publish(msg);
+  // Initialize with one run
+  torch::Tensor rand_input = torch::rand({1, 1, 64, 64}).to(device);
+  torch::Tensor output = discriminator->forward(rand_input);
 
-    ROS_INFO("Sending random direction %f, %f, %f,  Ang %f, %f, %f",
-    msg.linear.x, msg.linear.y, msg.linear.z,
-    msg.angular.x, msg.angular.y, msg.angular.z);
+ 
+  // Time a thousand test runs
+  ros::Time start = ros::Time::now();
 
+  for (int i = 0; i < 1000; i++) {
+    rand_input = torch::rand({1, 1, 64, 64}).to(device);
+    output = discriminator->forward(rand_input);
 
-    ros::spinOnce();
-
-    loop_rate.sleep();
   }
+
+  std::cout << "Time taken (seconds) " << std::endl;
+  std::cout << ros::Time::now() - start << std::endl;
+
+  // while (ros::ok())
+  // {
+  //   geometry_msgs::Twist msg;
+
+  //   msg.linear.x = forward_mean;
+  //   msg.angular.z = angular_mean;
+
+  //   cmd_vel_pub.publish(msg);
+
+  //   ROS_INFO("Sending random direction %f, %f, %f,  Ang %f, %f, %f",
+  //   msg.linear.x, msg.linear.y, msg.linear.z,
+  //   msg.angular.x, msg.angular.y, msg.angular.z);
+
+  //   ros::spinOnce();
+
+  //   loop_rate.sleep();
+  // }
 
 
   return 0;

@@ -4,8 +4,9 @@ project(mainbot)
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
 
-## Set the path of pytorch that you extracted to your home folder
-##set(CMAKE_PREFIX_PATH $ENV{HOME}/pytorch/torch)
+# Note, please be sure to invoke catkin with the proper toolchain file
+# Because pytorch stuff will only work with Clang, not GCC
+# catkin_make --cmake-args -DCMAKE_TOOLCHAIN_FILE=/home/robot/catkin_ws/src/mainbot/toolchain.cmake
 
 ## Add these CMAKE configs to work with a custom-built pytorch rather than
 ## the prepackaged one: https://github.com/facebookresearch/Detectron/issues/715
@@ -14,8 +15,9 @@ set(Caffe2_DIR "$ENV{HOME}/pytorch/torch/share/cmake/Caffe2/")
 set(Gloo_DIR "$ENV{HOME}/pytorch/torch/share/cmake/Gloo/")
 set(tensorpipe_DIR "$ENV{HOME}/pytorch/torch/share/cmake/tensorpipe/")
 set(Torch_DIR "$ENV{HOME}/pytorch/torch/share/cmake/Torch/")
-##include_directories("$ENV{HOME}/pytorch/torch/lib/include")
 find_package(Torch REQUIRED)
+
+
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
