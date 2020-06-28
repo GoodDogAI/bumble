@@ -24,6 +24,7 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
   ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
   img->encoding.c_str(), img->width, img->height);
 
+
   last_image_received = ros::Time::now();
 }
 
@@ -64,44 +65,21 @@ int main(int argc, char **argv)
     device = torch::kCUDA;
   }
 
-  torch::jit::script::Module module;
+  torch::jit::script::Module yolov5;
   try {
     // Deserialize the ScriptModule from a file using torch::jit::load().
-    module = torch::jit::load("/home/robot/yolov5s.torchscript");
+    yolov5 = torch::jit::load("/home/robot/yolov5s.torchscript");
     std::cout << "Loaded the model" << std::endl;
+    yolov5.to(device);
+    std::cout << "Moved to device" << std::endl;
   }
   catch (const c10::Error& e) {
     std::cerr << "error loading the model\n";
     return -1;
   }
 
+  torch::Tensor rand_input = torch::rand({1, 3, 640, 640}).to(device);
 
-
- torch::nn::Sequential discriminator(
-  // Layer 1
-  torch::nn::Conv2d(
-      torch::nn::Conv2dOptions(1, 64, 4).stride(2).padding(1).bias(false)),
-  torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2)),
-  // Layer 2
-  torch::nn::Conv2d(
-      torch::nn::Conv2dOptions(64, 128, 4).stride(2).padding(1).bias(false)),
-  torch::nn::BatchNorm2d(128),
-  torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2)),
-  // Layer 3
-  torch::nn::Conv2d(
-      torch::nn::Conv2dOptions(128, 256, 4).stride(2).padding(1).bias(false)),
-  torch::nn::BatchNorm2d(256),
-  torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2)),
-  // Layer 4
-  torch::nn::Conv2d(
-      torch::nn::Conv2dOptions(256, 1, 3).stride(1).padding(0).bias(false)),
-  torch::nn::Sigmoid());
-
- discriminator->to(device);
-
-  // Initialize with one run
-  torch::Tensor rand_input = torch::rand({1, 1, 64, 64}).to(device);
-  torch::Tensor output = discriminator->forward(rand_input);
 
   while (ros::ok())
   {
@@ -111,6 +89,11 @@ int main(int argc, char **argv)
     msg.angular.z = angular_mean;
 
     cmd_vel_pub.publish(msg);
+
+    ros::Time start = ros::Time::now();
+
+    auto yolo_features = yolov5.forward({rand_input});
+    std::cout << "Yolo ran in " << ros::Time::now() - start << std::endl;
 
     ros::spinOnce();
 
