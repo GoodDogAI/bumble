@@ -18,12 +18,35 @@
 
 ros::Time last_image_received;
 
+torch::Tensor image_input = torch::zeros({1, 3, 640, 640});
+
+std::vector<std::string> yolo_class_names = {
+  "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign",
+  "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
+  "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", 
+  "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
+  "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table",
+  "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator",
+  "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
+};
+
 
 void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
 {
   ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
   img->encoding.c_str(), img->width, img->height);
 
+  // Load the data into a tensor, not that it doesn't take ownership of the ROS message
+  auto temp_tensor = torch::from_blob(const_cast<uint8_t*>(&img->data[0]), 
+                                      {640, 640},
+                                      torch::TensorOptions().dtype(torch::kUInt8));
+
+  // Cast the float in the range 0 to 1                                      
+  temp_tensor = temp_tensor.to(torch::kFloat) / 255.0;
+  
+  // Set the dimensions
+  temp_tensor = temp_tensor.view({1, 1, 640, 640}).expand({-1, 3, -1, -1});
+  image_input = temp_tensor;
 
   last_image_received = ros::Time::now();
 }
@@ -78,7 +101,7 @@ int main(int argc, char **argv)
     return -1;
   }
 
-  torch::Tensor rand_input = torch::rand({1, 3, 640, 640}).to(device);
+//  torch::Tensor rand_input = torch::rand({1, 3, 640, 640}).to(device);
 
 
   while (ros::ok())
@@ -92,8 +115,31 @@ int main(int argc, char **argv)
 
     ros::Time start = ros::Time::now();
 
-    auto yolo_features = yolov5.forward({rand_input});
+    auto yolo_features = yolov5.forward({image_input.to(device)}).toTensorVector();
     std::cout << "Yolo ran in " << ros::Time::now() - start << std::endl;
+
+    auto all_yolo_frames = torch::cat({yolo_features[0].cpu().view({1, -1, 85}),
+                                       yolo_features[1].cpu().view({1, -1, 85}),
+                                       yolo_features[2].cpu().view({1, -1, 85})}, 1);
+
+    all_yolo_frames = all_yolo_frames.cpu();
+
+    std::cout << "shape " << all_yolo_frames.sizes() << all_yolo_frames.device() << std::endl;      
+
+    float threshold = 0.6;
+    auto frame_access = all_yolo_frames.accessor<float,3>();
+
+    for(int32_t i = 0; i < all_yolo_frames.sizes()[1]; i++) {
+       float base_confidence = frame_access[0][i][4];
+
+       if (base_confidence >= threshold) {
+          for(int32_t class_index = 0; class_index < 80; class_index++) {
+            if( frame_access[0][i][class_index + 5] * base_confidence >= threshold) {
+              std::cout << "Saw class " << yolo_class_names[class_index] << std::endl;
+            }
+          }
+       }
+    }                                
 
     ros::spinOnce();
 
