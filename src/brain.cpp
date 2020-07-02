@@ -20,7 +20,7 @@
 
 ros::Time last_image_received;
 
-torch::Tensor image_input = torch::zeros({1, 3, 640, 640});
+torch::Tensor image_input = torch::zeros({1, 3, 640, 480});
 
 std::vector<std::string> yolo_class_names = {
   "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign",
@@ -40,14 +40,14 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
 
   // Load the data into a tensor, not that it doesn't take ownership of the ROS message
   auto temp_tensor = torch::from_blob(const_cast<uint8_t*>(&img->data[0]), 
-                                      {640, 640},
+                                      {img->width, img->height},
                                       torch::TensorOptions().dtype(torch::kUInt8));
 
   // Cast the float in the range 0 to 1                                      
   temp_tensor = temp_tensor.to(torch::kFloat) / 255.0;
   
   // Set the dimensions
-  temp_tensor = temp_tensor.view({1, 1, 640, 640}).expand({-1, 3, -1, -1});
+  temp_tensor = temp_tensor.view({1, 1, img->width, img->height}).expand({-1, 3, -1, -1});
   image_input = temp_tensor;
 
   last_image_received = ros::Time::now();
@@ -127,7 +127,8 @@ int main(int argc, char **argv)
 
     all_yolo_frames = all_yolo_frames.cpu();
 
-    std::cout << "shape " << all_yolo_frames.sizes() << all_yolo_frames.device() << std::endl;      
+    std::cout << "input shape " << image_input.sizes() << std::endl;
+    std::cout << "yolo shape " << all_yolo_frames.sizes() << all_yolo_frames.device() << std::endl;      
 
     float threshold = 0.6;
     auto frame_access = all_yolo_frames.accessor<float,3>();
@@ -150,17 +151,18 @@ int main(int argc, char **argv)
        }
     }      
 
+
     //Copies an image from a tensor back into a ROS Image message and publishes it
     sensor_msgs::ImagePtr yolo_msg = boost::make_shared<sensor_msgs::Image>();
     yolo_msg->header = std_msgs::Header();
     yolo_msg->width = 640;
-    yolo_msg->height = 640;
-    yolo_msg->encoding = "mono8";
+    yolo_msg->height = 480;
+    yolo_msg->encoding = "rgb8";
     yolo_msg->is_bigendian = false;
-    yolo_msg->step = 640;
+    yolo_msg->step = 640 * 3;
     size_t size = yolo_msg->step * yolo_msg->height;
     yolo_msg->data.resize(size);
-    memcpy((char*)(&yolo_msg->data[0]), (tagged_output_image * 255).to(torch::kUInt8).data_ptr(), size);
+    memcpy((char*)(&yolo_msg->data[0]), (tagged_output_image * 255).contiguous(torch::MemoryFormat::ChannelsLast).to(torch::kUInt8).data_ptr(), size);
 
     debug_img_pub.publish(yolo_msg);
                           
