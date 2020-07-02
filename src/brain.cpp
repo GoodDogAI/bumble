@@ -3,6 +3,8 @@
 #include "geometry_msgs/Twist.h"
 #include "dynamixel_workbench_msgs/DynamixelCommand.h"
 
+#include <boost/make_shared.hpp>
+
 #include <torch/torch.h>
 #include <torch/script.h>
 
@@ -70,6 +72,7 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
+  ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
   ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command");
 
   ros::Subscriber sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
@@ -129,6 +132,11 @@ int main(int argc, char **argv)
     float threshold = 0.6;
     auto frame_access = all_yolo_frames.accessor<float,3>();
 
+    auto tagged_output_image = image_input.clone();
+
+    auto frame_bboxes = torch::zeros( {all_yolo_frames.sizes()[1], 4});
+    frame_bboxes.index_put_({torch::indexing::Slice(), 0}, all_yolo_frames.index({0, torch::indexing::Slice(), 0}) - all_yolo_frames.index({0, torch::indexing::Slice(), 2}) / 2);
+
     for(int32_t i = 0; i < all_yolo_frames.sizes()[1]; i++) {
        float base_confidence = frame_access[0][i][4];
 
@@ -136,10 +144,26 @@ int main(int argc, char **argv)
           for(int32_t class_index = 0; class_index < 80; class_index++) {
             if( frame_access[0][i][class_index + 5] * base_confidence >= threshold) {
               std::cout << "Saw class " << yolo_class_names[class_index] << std::endl;
+
             }
           }
        }
-    }                                
+    }      
+
+    //Copies an image from a tensor back into a ROS Image message and publishes it
+    sensor_msgs::ImagePtr yolo_msg = boost::make_shared<sensor_msgs::Image>();
+    yolo_msg->header = std_msgs::Header();
+    yolo_msg->width = 640;
+    yolo_msg->height = 640;
+    yolo_msg->encoding = "mono8";
+    yolo_msg->is_bigendian = false;
+    yolo_msg->step = 640;
+    size_t size = yolo_msg->step * yolo_msg->height;
+    yolo_msg->data.resize(size);
+    memcpy((char*)(&yolo_msg->data[0]), (tagged_output_image * 255).to(torch::kUInt8).data_ptr(), size);
+
+    debug_img_pub.publish(yolo_msg);
+                          
 
     ros::spinOnce();
 
