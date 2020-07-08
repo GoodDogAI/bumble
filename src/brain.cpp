@@ -95,7 +95,7 @@ int main(int argc, char **argv)
   torch::jit::script::Module yolov5;
   try {
     // Deserialize the ScriptModule from a file using torch::jit::load().
-    yolov5 = torch::jit::load("/home/robot/yolov5s.640x480.torchscript");
+    yolov5 = torch::jit::load("/home/robot/yolov5s.torchscript");
     std::cout << "Loaded the model" << std::endl;
     yolov5.to(device);
     std::cout << "Moved to device" << std::endl;
@@ -119,33 +119,28 @@ int main(int argc, char **argv)
 
     ros::Time start = ros::Time::now();
 
-    auto yolo_features = yolov5.forward({image_input.to(device)}).toTensorVector();
+    auto yolo_output = yolov5.forward({image_input.to(device)}).toTuple();
+    auto yolo_features = yolo_output->elements()[0].toTensor().cpu();
     std::cout << "Yolo ran in " << ros::Time::now() - start << std::endl;
 
-    auto all_yolo_frames = torch::cat({yolo_features[0].cpu().view({1, -1, 85}),
-                                       yolo_features[1].cpu().view({1, -1, 85}),
-                                       yolo_features[2].cpu().view({1, -1, 85})}, 1);
-
-    all_yolo_frames = all_yolo_frames.cpu();
-
     std::cout << "input shape " << image_input.sizes() << std::endl;
-    std::cout << "yolo shape " << all_yolo_frames.sizes() << all_yolo_frames.device() << std::endl;      
+    std::cout << "yolo shape " << yolo_features.sizes() << std::endl;      
 
     float threshold = 0.6;
-    auto frame_access = all_yolo_frames.accessor<float,3>();
+    auto frame_access = yolo_features.accessor<float,3>();
 
     auto tagged_output_image = image_input.clone();
 
-    auto frame_bboxes = torch::zeros( {all_yolo_frames.sizes()[1], 4});
-    frame_bboxes.index_put_({torch::indexing::Slice(), 0}, all_yolo_frames.index({0, torch::indexing::Slice(), 0}) - all_yolo_frames.index({0, torch::indexing::Slice(), 2}) / 2.0);
-    frame_bboxes.index_put_({torch::indexing::Slice(), 1}, all_yolo_frames.index({0, torch::indexing::Slice(), 1}) - all_yolo_frames.index({0, torch::indexing::Slice(), 3}) / 2.0);
-    frame_bboxes.index_put_({torch::indexing::Slice(), 2}, all_yolo_frames.index({0, torch::indexing::Slice(), 0}) + all_yolo_frames.index({0, torch::indexing::Slice(), 2}) / 2.0);
-    frame_bboxes.index_put_({torch::indexing::Slice(), 3}, all_yolo_frames.index({0, torch::indexing::Slice(), 1}) + all_yolo_frames.index({0, torch::indexing::Slice(), 3}) / 2.0);
-    frame_bboxes = (frame_bboxes * 640).round().to(torch::kInt32);
+    auto frame_bboxes = torch::zeros( {yolo_features.sizes()[1], 4});
+    frame_bboxes.index_put_({torch::indexing::Slice(), 0}, (yolo_features.index({0, torch::indexing::Slice(), 0}) - yolo_features.index({0, torch::indexing::Slice(), 2}) / 2.0));
+    frame_bboxes.index_put_({torch::indexing::Slice(), 1}, (yolo_features.index({0, torch::indexing::Slice(), 1}) - yolo_features.index({0, torch::indexing::Slice(), 3}) / 2.0));
+    frame_bboxes.index_put_({torch::indexing::Slice(), 2}, (yolo_features.index({0, torch::indexing::Slice(), 0}) + yolo_features.index({0, torch::indexing::Slice(), 2}) / 2.0));
+    frame_bboxes.index_put_({torch::indexing::Slice(), 3}, (yolo_features.index({0, torch::indexing::Slice(), 1}) + yolo_features.index({0, torch::indexing::Slice(), 3}) / 2.0));
+    frame_bboxes = frame_bboxes.round().to(torch::kInt32);
 
     auto bbox_access = frame_bboxes.accessor<int,2>();
 
-    for(int32_t i = 0; i < all_yolo_frames.sizes()[1]; i++) {
+    for(int32_t i = 0; i < yolo_features.sizes()[1]; i++) {
        float base_confidence = frame_access[0][i][4];
 
        if (base_confidence >= threshold) {
@@ -156,7 +151,7 @@ int main(int argc, char **argv)
 
               std::cout << frame_access[0][i][0] << std::endl;
 
-              tagged_output_image.index_put_({0, 1, torch::indexing::Slice(bbox_access[i][0], bbox_access[i][2]), torch::indexing::Slice(bbox_access[i][1], bbox_access[i][3])}, 1.0);
+              tagged_output_image.index_put_({0, 1, torch::indexing::Slice(bbox_access[i][1], bbox_access[i][3]), torch::indexing::Slice(bbox_access[i][0], bbox_access[i][2])}, 1.0);
               
               //This works to just put a green square in a constant place
               //tagged_output_image.index_put_({0, 1, torch::indexing::Slice(50, 150), torch::indexing::Slice(200, 300)}, 1.0);
