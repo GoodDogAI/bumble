@@ -12,13 +12,69 @@
 #include <random>
 #include <math.h>
 
+#define INPUT_BINDING_NAME "images"
+#define OUTPUT_BINDING_NAME "output"
+
 #define MAX_SPEED 0.50
 
 #define TILT_ID 10
 #define PAN_ID 11
 
+using namespace nvinfer1;
+
 ros::Time last_image_received;
 
+template <typename T>
+struct TrtDestroyer
+{
+    void operator()(T* t)
+    {
+        t->destroy();
+    }
+};
+
+template <typename T>
+using TrtUniquePtr = std::unique_ptr<T, TrtDestroyer<T>>;
+
+class Logger : public ILogger           
+ {
+     void log(Severity severity, const char* msg) override
+     {
+         // suppress info-level messages
+         if (severity != Severity::kINFO)
+             std::cout << msg << std::endl;
+     }
+ } gLogger;
+
+ICudaEngine* loadEngine(const std::string& engine, int DLACore, std::ostream& err)
+{
+    std::ifstream engineFile(engine, std::ios::binary);
+    if (!engineFile)
+    {
+        err << "Error opening engine file: " << engine << std::endl;
+        return nullptr;
+    }
+
+    engineFile.seekg(0, engineFile.end);
+    long int fsize = engineFile.tellg();
+    engineFile.seekg(0, engineFile.beg);
+
+    std::vector<char> engineData(fsize);
+    engineFile.read(engineData.data(), fsize);
+    if (!engineFile)
+    {
+        err << "Error loading engine file: " << engine << std::endl;
+        return nullptr;
+    }
+
+    TrtUniquePtr<IRuntime> runtime{createInferRuntime(gLogger)};
+    if (DLACore != -1)
+    {
+        runtime->setDLACore(DLACore);
+    }
+
+    return runtime->deserializeCudaEngine(engineData.data(), fsize, nullptr);
+}
 
 std::vector<std::string> yolo_class_names = {
   "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign",
@@ -72,7 +128,14 @@ int main(int argc, char **argv)
   std::random_device rd;  //Will be used to obtain a seed for the random number engine
   std::mt19937 gen(rd());
 
- 
+  std::cout << "Creating Inference engine and execution context" << std::endl;
+  ICudaEngine* engine = loadEngine("/home/robot/yolov5s.tensorrt", 0, std::cout);
+  IExecutionContext *context = engine->createExecutionContext();
+  std::cout << "Created" << std::endl;
+
+  for (int ib = 0; ib < engine->getNbBindings(); ib++) {
+   std::cout << engine->getBindingName(ib) << " isInput: " << engine->bindingIsInput(ib) << std::endl; 
+  }
 
   while (ros::ok())
   {
@@ -85,8 +148,14 @@ int main(int argc, char **argv)
 
     ros::Time start = ros::Time::now();
 
-   
+    std::cout << "A" << std::endl;
 
+    int inputIndex = engine->getBindingIndex(INPUT_BINDING_NAME);
+    int outputIndex = engine->getBindingIndex(OUTPUT_BINDING_NAME);
+    void* buffers[2];
+    // buffers[inputIndex] = inputbuffer;
+    // buffers[outputIndex] = outputBuffer;
+    // context->enqueue(batchSize, buffers, stream, nullptr);
 
     //Copies an image from a tensor back into a ROS Image message and publishes it
     sensor_msgs::ImagePtr yolo_msg = boost::make_shared<sensor_msgs::Image>();

@@ -118,6 +118,7 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  PUBLIC ${CUDA_INSTALL_DIR}/include
 )
 
 ## Declare a C++ library
@@ -163,6 +164,11 @@ target_link_libraries(randomwalk
 )
 target_link_libraries(brain
   ${catkin_LIBRARIES}
+  ${CUDART_LIB}
+  ${CUBLAS_LIB}
+  ${CUDNN_LIB}
+  nvinfer
+  ${RT_LIB}
 )
 
 #############
