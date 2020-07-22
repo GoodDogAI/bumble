@@ -4,6 +4,7 @@ project(mainbot)
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
 
+set(CUDA_INSTALL_DIR /usr/local/cuda)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -118,7 +119,7 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
-  PUBLIC ${CUDA_INSTALL_DIR}/include
+  ${CUDA_INSTALL_DIR}/include
 )
 
 ## Declare a C++ library
