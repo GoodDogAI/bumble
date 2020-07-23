@@ -6,7 +6,7 @@
 #include <boost/make_shared.hpp>
 
 #include "NvInfer.h"
-
+#include "tensorrt_common/buffers.h"
 
 #include <iostream>
 #include <fstream>
