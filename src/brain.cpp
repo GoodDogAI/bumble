@@ -47,7 +47,7 @@ class Logger : public ILogger
      }
  } gLogger;
 
-ICudaEngine* loadEngine(const std::string& engine, int DLACore, std::ostream& err)
+std::shared_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& engine, int DLACore, std::ostream& err)
 {
     std::ifstream engineFile(engine, std::ios::binary);
     if (!engineFile)
@@ -74,7 +74,8 @@ ICudaEngine* loadEngine(const std::string& engine, int DLACore, std::ostream& er
         runtime->setDLACore(DLACore);
     }
 
-    return runtime->deserializeCudaEngine(engineData.data(), fsize, nullptr);
+    return std::shared_ptr<nvinfer1::ICudaEngine>(runtime->deserializeCudaEngine(engineData.data(), fsize, nullptr),
+                                                  samplesCommon::InferDeleter());
 }
 
 std::vector<std::string> yolo_class_names = {
@@ -130,13 +131,36 @@ int main(int argc, char **argv)
   std::mt19937 gen(rd());
 
   std::cout << "Creating Inference engine and execution context" << std::endl;
-  ICudaEngine* engine = loadEngine("/home/robot/yolov5s.tensorrt", 0, std::cout);
-  IExecutionContext *context = engine->createExecutionContext();
+  std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine("/home/robot/yolov5s.tensorrt", 0, std::cout);
+  IExecutionContext *context = mEngine->createExecutionContext();
   std::cout << "Created" << std::endl;
 
-  for (int ib = 0; ib < engine->getNbBindings(); ib++) {
-   std::cout << engine->getBindingName(ib) << " isInput: " << engine->bindingIsInput(ib) << std::endl; 
+  for (int ib = 0; ib < mEngine->getNbBindings(); ib++) {
+   std::cout << mEngine->getBindingName(ib) << " isInput: " << mEngine->bindingIsInput(ib) << std::endl; 
   }
+
+  samplesCommon::BufferManager buffers(mEngine, 1);
+
+  cudaStream_t stream;
+  CHECK(cudaStreamCreate(&stream));
+
+  // Asynchronously copy data from host input buffers to device input buffers
+  buffers.copyInputToDeviceAsync(stream);
+
+  // Asynchronously enqueue the inference work
+  if (!context->enqueue(1, buffers.getDeviceBindings().data(), stream, nullptr))
+  {
+      return false;
+  }
+  // Asynchronously copy data from device output buffers to host output buffers
+  buffers.copyOutputToHostAsync(stream);
+
+  // Wait for the work in the stream to complete
+  cudaStreamSynchronize(stream);
+
+  // Release stream
+  cudaStreamDestroy(stream);
+
 
   while (ros::ok())
   {
@@ -151,8 +175,8 @@ int main(int argc, char **argv)
 
     std::cout << "A" << std::endl;
 
-    int inputIndex = engine->getBindingIndex(INPUT_BINDING_NAME);
-    int outputIndex = engine->getBindingIndex(OUTPUT_BINDING_NAME);
+    int inputIndex = mEngine->getBindingIndex(INPUT_BINDING_NAME);
+    int outputIndex = mEngine->getBindingIndex(OUTPUT_BINDING_NAME);
     void* buffers[2];
     // buffers[inputIndex] = inputbuffer;
     // buffers[outputIndex] = outputBuffer;

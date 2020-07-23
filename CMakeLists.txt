@@ -14,6 +14,9 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
 )
 
+find_package(CUDA)
+
+
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
@@ -107,7 +110,7 @@ catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES mainbot
 #  CATKIN_DEPENDS roscpp std_msgs
-#  DEPENDS system_lib
+#  DEPENDS CUDA
 )
 
 ###########
@@ -138,7 +141,7 @@ include_directories(
 # add_executable(${PROJECT_NAME}_node src/mainbot_node.cpp)
 add_executable(odrive src/odrive.cpp)
 add_executable(randomwalk src/randomwalk.cpp)
-add_executable(brain src/brain.cpp)
+cuda_add_executable(brain src/brain.cpp src/tensorrt_common/logger.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -163,6 +166,7 @@ target_link_libraries(odrive
 target_link_libraries(randomwalk
   ${catkin_LIBRARIES}
 )
+
 target_link_libraries(brain
   ${catkin_LIBRARIES}
   ${CUDART_LIB}
@@ -170,6 +174,8 @@ target_link_libraries(brain
   ${CUDNN_LIB}
   nvinfer
   ${RT_LIB}
+  ${CMAKE_DL_LIBS}
+  ${CMAKE_THREAD_LIBS_INIT}
 )
 
 #############
