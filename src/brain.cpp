@@ -5,6 +5,8 @@
 
 #include <boost/make_shared.hpp>
 
+#include <cv_bridge/cv_bridge.h>
+
 #include "NvInfer.h"
 #include "tensorrt_common/buffers.h"
 
@@ -23,6 +25,7 @@
 
 using namespace nvinfer1;
 
+cv_bridge::CvImagePtr cv_ptr;
 ros::Time last_image_received;
 
 template <typename T>
@@ -94,7 +97,9 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
   ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
   img->encoding.c_str(), img->width, img->height);
 
-  
+
+  cv_ptr = cv_bridge::toCvCopy(img, img->encoding);
+
   last_image_received = ros::Time::now();
 }
 
@@ -134,12 +139,18 @@ int main(int argc, char **argv)
   std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine("/home/robot/yolov5s.tensorrt", 0, std::cout);
   IExecutionContext *context = mEngine->createExecutionContext();
   std::cout << "Created" << std::endl;
+  std::cout << "Implicit batch: " << mEngine->hasImplicitBatchDimension() << std::endl;
 
   for (int ib = 0; ib < mEngine->getNbBindings(); ib++) {
-   std::cout << mEngine->getBindingName(ib) << " isInput: " << mEngine->bindingIsInput(ib) << std::endl; 
+   std::cout << mEngine->getBindingName(ib) << " isInput: " << mEngine->bindingIsInput(ib) 
+    << " Dims: " << mEngine->getBindingDimensions(ib) << std::endl; 
   }
 
-  samplesCommon::BufferManager buffers(mEngine, 1);
+  samplesCommon::BufferManager buffers(mEngine, 0);
+
+  float* hostInputBuffer = static_cast<float*>(buffers.getHostBuffer(INPUT_BINDING_NAME));
+  
+
 
   cudaStream_t stream;
   CHECK(cudaStreamCreate(&stream));
@@ -175,6 +186,7 @@ int main(int argc, char **argv)
 
     std::cout << "A" << std::endl;
 
+
     int inputIndex = mEngine->getBindingIndex(INPUT_BINDING_NAME);
     int outputIndex = mEngine->getBindingIndex(OUTPUT_BINDING_NAME);
     void* buffers[2];
@@ -183,18 +195,12 @@ int main(int argc, char **argv)
     // context->enqueue(batchSize, buffers, stream, nullptr);
 
     //Copies an image from a tensor back into a ROS Image message and publishes it
-    sensor_msgs::ImagePtr yolo_msg = boost::make_shared<sensor_msgs::Image>();
-    yolo_msg->header = std_msgs::Header();
-    yolo_msg->width = 640;
-    yolo_msg->height = 480;
-    yolo_msg->encoding = "rgb8";
-    yolo_msg->is_bigendian = false;
-    yolo_msg->step = 640 * 3;
-    size_t size = yolo_msg->step * yolo_msg->height;
-    yolo_msg->data.resize(size);
 
-    debug_img_pub.publish(yolo_msg);
-                          
+    if (cv_ptr) {
+        cv::circle(cv_ptr->image, cv::Point(50, 50), 10, 1);       
+        debug_img_pub.publish(cv_ptr->toImageMsg());
+    }
+                     
 
     ros::spinOnce();
 
