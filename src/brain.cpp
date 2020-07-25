@@ -136,19 +136,25 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
 void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
     std::cout << dims << std::endl;
 
+    // for (int d = 0; d < dims.d[4]; d++) {
+    //     std::cout <<detectionOut[d] << " ";
+    // }
+    //     std::cout << std::endl;
+
     //NCHW format
-    for (int c = 0; c < 3; c++) {
+    for (int c = 0; c < CHECK_COUNT; c++) {
         for (int row = 0; row < dims.d[2]; row++) {
             for (int col = 0; col < dims.d[3]; col++) {
                 float box_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
                                                         row * dims.d[3] * dims.d[4] +
                                                         col * dims.d[4] +
                                                         4]);
+                //std::cout << box_prob << std::endl;
 
-                if (box_prob < 0.60) 
+                if (box_prob < 0.20) 
                     continue;
 
-                for (int obj_class = 0; obj_class < 80; obj_class++ ){
+                for (int obj_class = 0; obj_class < CLASS_NUM; obj_class++ ){
                     float class_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
                                                             row * dims.d[3] * dims.d[4] +
                                                             col * dims.d[4] +
@@ -157,7 +163,7 @@ void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
                     class_prob = class_prob * box_prob;                                                                
 
                     if (class_prob >= .60) {
-                        std::cout << "Found class " << yolo_class_names[obj_class] << class_prob << std::endl;
+                        std::cout << "Found class " << yolo_class_names[obj_class] << c << std::endl;
                         float x = (col - 0.5f + 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
                                                         row * dims.d[3] * dims.d[4] +
                                                         col * dims.d[4] +
@@ -225,13 +231,12 @@ int main(int argc, char **argv)
 
   for (int ib = 0; ib < mEngine->getNbBindings(); ib++) {
    std::cout << mEngine->getBindingName(ib) << " isInput: " << mEngine->bindingIsInput(ib) 
-    << " Dims: " << mEngine->getBindingDimensions(ib) << std::endl; 
+    << " Dims: " << mEngine->getBindingDimensions(ib) << " dtype: " << (int)mEngine->getBindingDataType(ib) <<  std::endl; 
   }
 
   samplesCommon::BufferManager buffers(mEngine, 0);
 
   
-
 
   while (ros::ok())
   {
@@ -281,17 +286,17 @@ int main(int argc, char **argv)
         cudaStreamDestroy(stream);
 
         //Read back the final classifications
-        const float* detectionOut = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME));
-        nvinfer1::Dims dims = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME));
-        detectBBoxes(detectionOut, dims, yolo1);
+        const float* detectionOut1 = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME));
+        nvinfer1::Dims dims1 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME));
+        detectBBoxes(detectionOut1, dims1, yolo1);
 
-        detectionOut = static_cast<const float*>(buffers.getHostBuffer("427"));
-        dims = mEngine->getBindingDimensions(mEngine->getBindingIndex("427"));
-        detectBBoxes(detectionOut, dims, yolo2);
+        const float* detectionOut2 = static_cast<const float*>(buffers.getHostBuffer("427"));
+        nvinfer1::Dims dims2 = mEngine->getBindingDimensions(mEngine->getBindingIndex("427"));
+        detectBBoxes(detectionOut2, dims2, yolo2);
 
-        detectionOut = static_cast<const float*>(buffers.getHostBuffer("446"));
-        dims = mEngine->getBindingDimensions(mEngine->getBindingIndex("446"));
-        detectBBoxes(detectionOut, dims, yolo3);
+        const float* detectionOut3 = static_cast<const float*>(buffers.getHostBuffer("446"));
+        nvinfer1::Dims dims3 = mEngine->getBindingDimensions(mEngine->getBindingIndex("446"));
+        detectBBoxes(detectionOut3, dims3, yolo3);
         
         //Draws the inference data back into a ROS Image message and publishes it
         // cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));       
