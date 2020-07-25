@@ -83,6 +83,34 @@ std::shared_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& engine, int
                                                   samplesCommon::InferDeleter());
 }
 
+static constexpr int INPUT_H = 480;
+static constexpr int INPUT_W = 640;
+static constexpr int CLASS_NUM = 80;
+static constexpr int CHECK_COUNT = 3;
+
+struct YoloKernel
+{
+    int width;
+    int height;
+    float anchors[CHECK_COUNT*2];
+};
+
+static constexpr YoloKernel yolo1 = {
+    INPUT_W / 32,
+    INPUT_H / 32,
+    {116,90,  156,198,  373,326}
+};
+static constexpr YoloKernel yolo2 = {
+    INPUT_W / 16,
+    INPUT_H / 16,
+    {30,61,  62,45,  59,119}
+};
+static constexpr YoloKernel yolo3 = {
+    INPUT_W / 8,
+    INPUT_H / 8,
+    {10,13,  16,30,  33,23}
+};
+
 std::vector<std::string> yolo_class_names = {
   "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign",
   "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
@@ -105,15 +133,16 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
   last_image_received = ros::Time::now();
 }
 
-void detectBBoxes(const float* detectionOut, Dims dims) {
+void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
     std::cout << dims << std::endl;
 
+    //NCHW format
     for (int c = 0; c < 3; c++) {
-        for (int col = 0; col < dims.d[2]; col++) {
-            for (int row = 0; row < dims.d[3]; row++) {
+        for (int row = 0; row < dims.d[2]; row++) {
+            for (int col = 0; col < dims.d[3]; col++) {
                 float box_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
-                                                        col * dims.d[3] * dims.d[4] +
-                                                        row * dims.d[4] +
+                                                        row * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[4] +
                                                         4]);
 
                 if (box_prob < 0.60) 
@@ -121,14 +150,34 @@ void detectBBoxes(const float* detectionOut, Dims dims) {
 
                 for (int obj_class = 0; obj_class < 80; obj_class++ ){
                     float class_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
-                                                            col * dims.d[3] * dims.d[4] +
-                                                            row * dims.d[4] +
+                                                            row * dims.d[3] * dims.d[4] +
+                                                            col * dims.d[4] +
                                                             5 + obj_class]);
 
                     class_prob = class_prob * box_prob;                                                                
 
                     if (class_prob >= .60) {
                         std::cout << "Found class " << yolo_class_names[obj_class] << class_prob << std::endl;
+                        float x = (col - 0.5f + 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                        row * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[4] +
+                                                        0])) * INPUT_W / kernel.width;
+                        float y = (row - 0.5f + 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                        row * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[4] +
+                                                        1])) * INPUT_H / kernel.height;
+                        float width = 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                        row * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[4] +
+                                                        2]);
+                        width = width * width * kernel.anchors[2*c];
+                        float height = 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                        row * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[4] +
+                                                        3]);
+                        height = height * height * kernel.anchors[2*c + 1];
+                        std::cout << cv::Rect(x,y,width,height) << std::endl;
+                        cv::rectangle(cv_ptr->image, cv::Rect(x - width / 2,y - height / 2,width,height), CV_RGB(255,0,0));
                     }                                                                
                 }
             }
@@ -234,19 +283,18 @@ int main(int argc, char **argv)
         //Read back the final classifications
         const float* detectionOut = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME));
         nvinfer1::Dims dims = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME));
-        detectBBoxes(detectionOut, dims);
+        detectBBoxes(detectionOut, dims, yolo1);
 
         detectionOut = static_cast<const float*>(buffers.getHostBuffer("427"));
         dims = mEngine->getBindingDimensions(mEngine->getBindingIndex("427"));
-        detectBBoxes(detectionOut, dims);
+        detectBBoxes(detectionOut, dims, yolo2);
 
         detectionOut = static_cast<const float*>(buffers.getHostBuffer("446"));
         dims = mEngine->getBindingDimensions(mEngine->getBindingIndex("446"));
-        detectBBoxes(detectionOut, dims);
+        detectBBoxes(detectionOut, dims, yolo3);
         
-
         //Draws the inference data back into a ROS Image message and publishes it
-        cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));       
+        // cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));       
         debug_img_pub.publish(cv_ptr->toImageMsg());
     }
               
