@@ -28,6 +28,8 @@ using namespace nvinfer1;
 cv_bridge::CvImagePtr cv_ptr;
 ros::Time last_image_received;
 
+inline float Logist(float data){ return 1.0f / (1.0f + expf(-data)); };
+
 template <typename T>
 struct TrtDestroyer
 {
@@ -98,7 +100,7 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
   img->encoding.c_str(), img->width, img->height);
 
 
-  cv_ptr = cv_bridge::toCvCopy(img, img->encoding);
+  cv_ptr = cv_bridge::toCvCopy(img, "rgb8");
 
   last_image_received = ros::Time::now();
 }
@@ -148,29 +150,7 @@ int main(int argc, char **argv)
 
   samplesCommon::BufferManager buffers(mEngine, 0);
 
-  float* hostInputBuffer = static_cast<float*>(buffers.getHostBuffer(INPUT_BINDING_NAME));
   
-
-
-  cudaStream_t stream;
-  CHECK(cudaStreamCreate(&stream));
-
-  // Asynchronously copy data from host input buffers to device input buffers
-  buffers.copyInputToDeviceAsync(stream);
-
-  // Asynchronously enqueue the inference work
-  if (!context->enqueue(1, buffers.getDeviceBindings().data(), stream, nullptr))
-  {
-      return false;
-  }
-  // Asynchronously copy data from device output buffers to host output buffers
-  buffers.copyOutputToHostAsync(stream);
-
-  // Wait for the work in the stream to complete
-  cudaStreamSynchronize(stream);
-
-  // Release stream
-  cudaStreamDestroy(stream);
 
 
   while (ros::ok())
@@ -184,26 +164,85 @@ int main(int argc, char **argv)
 
     ros::Time start = ros::Time::now();
 
-    std::cout << "A" << std::endl;
-
-
-    int inputIndex = mEngine->getBindingIndex(INPUT_BINDING_NAME);
-    int outputIndex = mEngine->getBindingIndex(OUTPUT_BINDING_NAME);
-    void* buffers[2];
-    // buffers[inputIndex] = inputbuffer;
-    // buffers[outputIndex] = outputBuffer;
-    // context->enqueue(batchSize, buffers, stream, nullptr);
-
-    //Copies an image from a tensor back into a ROS Image message and publishes it
-
+    // Skip the image processing step if there is no image
     if (cv_ptr) {
-        cv::circle(cv_ptr->image, cv::Point(50, 50), 10, 1);       
+        float* hostInputBuffer = static_cast<float*>(buffers.getHostBuffer(INPUT_BINDING_NAME));
+
+        //NCHW format is offset_nchw(n, c, h, w) = n * CHW + c * HW + h * W + w
+        for(int i=0; i < cv_ptr->image.rows; i++) {
+            // pointer to first pixel in row
+            cv::Vec3b* pixel = cv_ptr->image.ptr<cv::Vec3b>(i);
+
+            for(int j=0; j < cv_ptr->image.cols; j++) {
+                hostInputBuffer[0 * cv_ptr->image.rows * cv_ptr->image.cols + j * cv_ptr->image.rows + i] = pixel[j][0];
+                hostInputBuffer[1 * cv_ptr->image.rows * cv_ptr->image.cols + j * cv_ptr->image.rows + i] = pixel[j][1];
+                hostInputBuffer[2 * cv_ptr->image.rows * cv_ptr->image.cols + j * cv_ptr->image.rows + i] = pixel[j][2];
+            }
+        }
+    
+        cudaStream_t stream;
+        CHECK(cudaStreamCreate(&stream));
+
+        // Asynchronously copy data from host input buffers to device input buffers
+        buffers.copyInputToDeviceAsync(stream);
+
+        // Asynchronously enqueue the inference work
+        if (!context->enqueue(1, buffers.getDeviceBindings().data(), stream, nullptr))
+        {
+            return false;
+        }
+        // Asynchronously copy data from device output buffers to host output buffers
+        buffers.copyOutputToHostAsync(stream);
+
+        // Wait for the work in the stream to complete
+        cudaStreamSynchronize(stream);
+
+        // Release stream
+        cudaStreamDestroy(stream);
+
+        //Read back the final classifications
+        const float* detectionOut = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME));
+        nvinfer1::Dims dims = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME));
+
+        std::cout << dims << std::endl;
+
+        for (int c = 0; c < 3; c++) {
+            for (int col = 0; col < dims.d[2]; col++) {
+                for (int row = 0; row < dims.d[3]; row++) {
+                    float box_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                         col * dims.d[3] * dims.d[4] +
+                                                         row * dims.d[4] +
+                                                         4]);
+
+                    if (box_prob < 0.50) 
+                        continue;
+
+                    for (int obj_class = 0; obj_class < 80; obj_class++ ){
+                        float class_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                                col * dims.d[3] * dims.d[4] +
+                                                                row * dims.d[4] +
+                                                                4 + obj_class]);
+
+                        class_prob = class_prob * box_prob;                                                                
+
+                        if (class_prob > .80) {
+                            std::cout << "Found class " << yolo_class_names[obj_class] << class_prob << std::endl;
+                        }                                                                
+                    }
+                }
+            }
+            
+        }
+        
+
+        //Draws the inference data back into a ROS Image message and publishes it
+        cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));       
         debug_img_pub.publish(cv_ptr->toImageMsg());
     }
-                     
+              
+    std::cout << "Took " << ros::Time::now() - start << std::endl;      
 
     ros::spinOnce();
-
     loop_rate.sleep();
   }
 
