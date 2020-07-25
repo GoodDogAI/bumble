@@ -105,6 +105,37 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
   last_image_received = ros::Time::now();
 }
 
+void detectBBoxes(const float* detectionOut, Dims dims) {
+    std::cout << dims << std::endl;
+
+    for (int c = 0; c < 3; c++) {
+        for (int col = 0; col < dims.d[2]; col++) {
+            for (int row = 0; row < dims.d[3]; row++) {
+                float box_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[3] * dims.d[4] +
+                                                        row * dims.d[4] +
+                                                        4]);
+
+                if (box_prob < 0.60) 
+                    continue;
+
+                for (int obj_class = 0; obj_class < 80; obj_class++ ){
+                    float class_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                            col * dims.d[3] * dims.d[4] +
+                                                            row * dims.d[4] +
+                                                            5 + obj_class]);
+
+                    class_prob = class_prob * box_prob;                                                                
+
+                    if (class_prob >= .60) {
+                        std::cout << "Found class " << yolo_class_names[obj_class] << class_prob << std::endl;
+                    }                                                                
+                }
+            }
+        }
+    }
+}
+
 /**
  * This code just drive the robot around randomly, for the purposes of initializing reinforcement learning training.
  */
@@ -174,9 +205,9 @@ int main(int argc, char **argv)
             cv::Vec3b* pixel = cv_ptr->image.ptr<cv::Vec3b>(i);
 
             for(int j=0; j < cv_ptr->image.cols; j++) {
-                hostInputBuffer[0 * cv_ptr->image.rows * cv_ptr->image.cols + j * cv_ptr->image.rows + i] = pixel[j][0];
-                hostInputBuffer[1 * cv_ptr->image.rows * cv_ptr->image.cols + j * cv_ptr->image.rows + i] = pixel[j][1];
-                hostInputBuffer[2 * cv_ptr->image.rows * cv_ptr->image.cols + j * cv_ptr->image.rows + i] = pixel[j][2];
+                hostInputBuffer[0 * cv_ptr->image.rows * cv_ptr->image.cols + i * cv_ptr->image.cols + j] = pixel[j][0] / 255.0;
+                hostInputBuffer[1 * cv_ptr->image.rows * cv_ptr->image.cols + i * cv_ptr->image.cols + j] = pixel[j][1] / 255.0;
+                hostInputBuffer[2 * cv_ptr->image.rows * cv_ptr->image.cols + i * cv_ptr->image.cols + j] = pixel[j][2] / 255.0;
             }
         }
     
@@ -203,36 +234,15 @@ int main(int argc, char **argv)
         //Read back the final classifications
         const float* detectionOut = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME));
         nvinfer1::Dims dims = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME));
+        detectBBoxes(detectionOut, dims);
 
-        std::cout << dims << std::endl;
+        detectionOut = static_cast<const float*>(buffers.getHostBuffer("427"));
+        dims = mEngine->getBindingDimensions(mEngine->getBindingIndex("427"));
+        detectBBoxes(detectionOut, dims);
 
-        for (int c = 0; c < 3; c++) {
-            for (int col = 0; col < dims.d[2]; col++) {
-                for (int row = 0; row < dims.d[3]; row++) {
-                    float box_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
-                                                         col * dims.d[3] * dims.d[4] +
-                                                         row * dims.d[4] +
-                                                         4]);
-
-                    if (box_prob < 0.50) 
-                        continue;
-
-                    for (int obj_class = 0; obj_class < 80; obj_class++ ){
-                        float class_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
-                                                                col * dims.d[3] * dims.d[4] +
-                                                                row * dims.d[4] +
-                                                                4 + obj_class]);
-
-                        class_prob = class_prob * box_prob;                                                                
-
-                        if (class_prob > .80) {
-                            std::cout << "Found class " << yolo_class_names[obj_class] << class_prob << std::endl;
-                        }                                                                
-                    }
-                }
-            }
-            
-        }
+        detectionOut = static_cast<const float*>(buffers.getHostBuffer("446"));
+        dims = mEngine->getBindingDimensions(mEngine->getBindingIndex("446"));
+        detectBBoxes(detectionOut, dims);
         
 
         //Draws the inference data back into a ROS Image message and publishes it
