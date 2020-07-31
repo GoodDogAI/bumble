@@ -17,10 +17,12 @@
 #include "hash/sha2_256.h"
 
 #include <iostream>
+
 #include <fstream>
 #include <random>
 #include <math.h>
 
+#define TENSORRT_YOLO_PATH "/home/robot/yolov5s.tensorrt"
 #define INPUT_BINDING_NAME "images"
 #define OUTPUT_BINDING_NAME1 "output"
 #define OUTPUT_BINDING_NAME2 "427"
@@ -229,14 +231,16 @@ int main(int argc, char **argv)
   std::mt19937 gen(rd());
 
   std::cout << "Creating Inference engine and execution context" << std::endl;
-  std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine("/home/robot/yolov5s.tensorrt", 0, std::cout);
+  std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine(TENSORRT_YOLO_PATH, 0, std::cout);
   IExecutionContext *context = mEngine->createExecutionContext();
   std::cout << "Created" << std::endl;
   std::cout << "Implicit batch: " << mEngine->hasImplicitBatchDimension() << std::endl;
 
   // Save off the hash of the engine used for future references
   std_msgs::String hash_msg = std_msgs::String();
-  Chocobo1::SHA2_256 sha2.addData()
+  std::ifstream infile (TENSORRT_YOLO_PATH, std::ios_base::binary);
+  Chocobo1::SHA2_256 sha2;
+  //sha2.addData((const void *)&infileb[0], 10);
   sha2.finalize();
   hash_msg.data = sha2.toString();
 

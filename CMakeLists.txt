@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 project(mainbot)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+add_compile_options(-std=c++14)
 
 set(CUDA_INSTALL_DIR /usr/local/cuda)
 
@@ -153,7 +153,7 @@ cuda_add_executable(brain src/brain.cpp src/tensorrt_common/logger.cpp)
 # set_target_properties(${PROJECT_NAME}_node PROPERTIES OUTPUT_NAME node PREFIX "")
 
 # Set CXX standard to support libtorch ABI
-set_property(TARGET brain PROPERTY CXX_STANDARD 14)
+set_property(TARGET brain PROPERTY CXX_STANDARD 17)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
