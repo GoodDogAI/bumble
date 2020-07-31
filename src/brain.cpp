@@ -1,4 +1,9 @@
 #include "ros/ros.h"
+
+#include "std_msgs/String.h"
+#include "std_msgs/MultiArrayLayout.h"
+#include "std_msgs/MultiArrayDimension.h"
+#include "std_msgs/Float32MultiArray.h"
 #include "sensor_msgs/Image.h"
 #include "geometry_msgs/Twist.h"
 #include "dynamixel_workbench_msgs/DynamixelCommand.h"
@@ -16,9 +21,13 @@
 #include <math.h>
 
 #define INPUT_BINDING_NAME "images"
-#define OUTPUT_BINDING_NAME "output"
+#define OUTPUT_BINDING_NAME1 "output"
+#define OUTPUT_BINDING_NAME2 "427"
+#define OUTPUT_BINDING_NAME3 "446"
+#define INTERMEDIATE_LAYER_BINDING_NAME "300"
 
 #define MAX_SPEED 0.50
+#define OBJECT_DETECTION_THRESHOLD 0.60
 
 #define TILT_ID 10
 #define PAN_ID 11
@@ -127,20 +136,11 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
   ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
   img->encoding.c_str(), img->width, img->height);
 
-
   cv_ptr = cv_bridge::toCvCopy(img, "rgb8");
-
   last_image_received = ros::Time::now();
 }
 
 void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
-    std::cout << dims << std::endl;
-
-    // for (int d = 0; d < dims.d[4]; d++) {
-    //     std::cout <<detectionOut[d] << " ";
-    // }
-    //     std::cout << std::endl;
-
     //NCHW format
     for (int c = 0; c < CHECK_COUNT; c++) {
         for (int row = 0; row < dims.d[2]; row++) {
@@ -151,7 +151,7 @@ void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
                                                         4]);
                 //std::cout << box_prob << std::endl;
 
-                if (box_prob < 0.20) 
+                if (box_prob < OBJECT_DETECTION_THRESHOLD) 
                     continue;
 
                 for (int obj_class = 0; obj_class < CLASS_NUM; obj_class++ ){
@@ -162,7 +162,7 @@ void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
 
                     class_prob = class_prob * box_prob;                                                                
 
-                    if (class_prob >= .60) {
+                    if (class_prob >= OBJECT_DETECTION_THRESHOLD) {
                         std::cout << "Found class " << yolo_class_names[obj_class] << c << std::endl;
                         float x = (col - 0.5f + 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
                                                         row * dims.d[3] * dims.d[4] +
@@ -211,6 +211,10 @@ int main(int argc, char **argv)
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
   ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
+  ros::Publisher yolo_intermediate_pub = n.advertise<std_msgs::Float32MultiArray>("yolo_intermediate", 2);
+  ros::Publisher version_pub = n.advertise<std_msgs::String>("onnx_version", 2);
+
+
   ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command");
 
   ros::Subscriber sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
@@ -286,21 +290,48 @@ int main(int argc, char **argv)
         cudaStreamDestroy(stream);
 
         //Read back the final classifications
-        const float* detectionOut1 = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME));
-        nvinfer1::Dims dims1 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME));
+        const float* detectionOut1 = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME1));
+        nvinfer1::Dims dims1 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME1));
         detectBBoxes(detectionOut1, dims1, yolo1);
 
-        const float* detectionOut2 = static_cast<const float*>(buffers.getHostBuffer("427"));
-        nvinfer1::Dims dims2 = mEngine->getBindingDimensions(mEngine->getBindingIndex("427"));
+        const float* detectionOut2 = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME2));
+        nvinfer1::Dims dims2 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME2));
         detectBBoxes(detectionOut2, dims2, yolo2);
 
-        const float* detectionOut3 = static_cast<const float*>(buffers.getHostBuffer("446"));
-        nvinfer1::Dims dims3 = mEngine->getBindingDimensions(mEngine->getBindingIndex("446"));
+        const float* detectionOut3 = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME3));
+        nvinfer1::Dims dims3 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME3));
         detectBBoxes(detectionOut3, dims3, yolo3);
         
         //Draws the inference data back into a ROS Image message and publishes it
-        // cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));       
         debug_img_pub.publish(cv_ptr->toImageMsg());
+
+        //Publish the intermediate yolo array
+        std_msgs::Float32MultiArray yolo_intermediate;
+        const float* intermediateOut = static_cast<const float*>(buffers.getHostBuffer(INTERMEDIATE_LAYER_BINDING_NAME));
+        nvinfer1::Dims intermediateDims = mEngine->getBindingDimensions(mEngine->getBindingIndex(INTERMEDIATE_LAYER_BINDING_NAME));
+        yolo_intermediate.data = std::vector<float>(intermediateOut, intermediateOut + intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
+        yolo_intermediate.layout.data_offset = 0;
+        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+        yolo_intermediate.layout.dim[0].label = "N";
+        yolo_intermediate.layout.dim[0].size = intermediateDims.d[0];
+        yolo_intermediate.layout.dim[0].stride = intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3];
+
+        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+        yolo_intermediate.layout.dim[1].label = "C";
+        yolo_intermediate.layout.dim[1].size = intermediateDims.d[1];
+        yolo_intermediate.layout.dim[1].stride = intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3];
+
+        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+        yolo_intermediate.layout.dim[2].label = "H";
+        yolo_intermediate.layout.dim[2].size = intermediateDims.d[2];
+        yolo_intermediate.layout.dim[2].stride = intermediateDims.d[2] * intermediateDims.d[3];
+
+        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+        yolo_intermediate.layout.dim[3].label = "W";
+        yolo_intermediate.layout.dim[3].size = intermediateDims.d[3];
+        yolo_intermediate.layout.dim[3].stride = intermediateDims.d[3];
+
+        yolo_intermediate_pub.publish(yolo_intermediate);
     }
               
     std::cout << "Took " << ros::Time::now() - start << std::endl;      
