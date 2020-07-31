@@ -9,11 +9,12 @@
 #include "dynamixel_workbench_msgs/DynamixelCommand.h"
 
 #include <boost/make_shared.hpp>
-
 #include <cv_bridge/cv_bridge.h>
 
 #include "NvInfer.h"
 #include "tensorrt_common/buffers.h"
+
+#include "hash/sha2_256.h"
 
 #include <iostream>
 #include <fstream>
@@ -233,6 +234,12 @@ int main(int argc, char **argv)
   std::cout << "Created" << std::endl;
   std::cout << "Implicit batch: " << mEngine->hasImplicitBatchDimension() << std::endl;
 
+  // Save off the hash of the engine used for future references
+  std_msgs::String hash_msg = std_msgs::String();
+  Chocobo1::SHA2_256 sha2.addData()
+  sha2.finalize();
+  hash_msg.data = sha2.toString();
+
   for (int ib = 0; ib < mEngine->getNbBindings(); ib++) {
    std::cout << mEngine->getBindingName(ib) << " isInput: " << mEngine->bindingIsInput(ib) 
     << " Dims: " << mEngine->getBindingDimensions(ib) << " dtype: " << (int)mEngine->getBindingDataType(ib) <<  std::endl; 
@@ -332,6 +339,7 @@ int main(int argc, char **argv)
         yolo_intermediate.layout.dim[3].stride = intermediateDims.d[3];
 
         yolo_intermediate_pub.publish(yolo_intermediate);
+        version_pub.publish(hash_msg);
     }
               
     std::cout << "Took " << ros::Time::now() - start << std::endl;      
