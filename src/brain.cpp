@@ -14,8 +14,6 @@
 #include "NvInfer.h"
 #include "tensorrt_common/buffers.h"
 
-#include "hash/sha2_256.h"
-
 #include <iostream>
 
 #include <fstream>
@@ -23,6 +21,8 @@
 #include <math.h>
 
 #define TENSORRT_YOLO_PATH "/home/robot/yolov5s.tensorrt"
+#define TENSORRT_MLPSAC_PATH "/home/robot/mlp.tensorrt"
+
 #define INPUT_BINDING_NAME "images"
 #define OUTPUT_BINDING_NAME1 "output"
 #define OUTPUT_BINDING_NAME2 "427"
@@ -215,7 +215,6 @@ int main(int argc, char **argv)
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
   ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
   ros::Publisher yolo_intermediate_pub = n.advertise<std_msgs::Float32MultiArray>("yolo_intermediate", 2);
-  ros::Publisher version_pub = n.advertise<std_msgs::String>("onnx_version", 2);
 
 
   ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command");
@@ -230,24 +229,28 @@ int main(int argc, char **argv)
   std::random_device rd;  //Will be used to obtain a seed for the random number engine
   std::mt19937 gen(rd());
 
-  std::cout << "Creating Inference engine and execution context" << std::endl;
+  //Load and print stats on the YOLO inference engine
+  std::cout << "Creating YOLO Inference engine and execution context" << std::endl;
   std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine(TENSORRT_YOLO_PATH, 0, std::cout);
   IExecutionContext *context = mEngine->createExecutionContext();
   std::cout << "Created" << std::endl;
-  std::cout << "Implicit batch: " << mEngine->hasImplicitBatchDimension() << std::endl;
-
-  // Save off the hash of the engine used for future references
-  std_msgs::String hash_msg = std_msgs::String();
-  std::ifstream infile (TENSORRT_YOLO_PATH, std::ios_base::binary);
-  Chocobo1::SHA2_256 sha2;
-  //sha2.addData((const void *)&infileb[0], 10);
-  sha2.finalize();
-  hash_msg.data = sha2.toString();
 
   for (int ib = 0; ib < mEngine->getNbBindings(); ib++) {
-   std::cout << mEngine->getBindingName(ib) << " isInput: " << mEngine->bindingIsInput(ib) 
+   std::cout << "YOLO " << mEngine->getBindingName(ib) << " isInput: " << mEngine->bindingIsInput(ib) 
     << " Dims: " << mEngine->getBindingDimensions(ib) << " dtype: " << (int)mEngine->getBindingDataType(ib) <<  std::endl; 
   }
+
+
+  std::cout << "Creating SAC MLP Inference engine and execution context" << std::endl;
+  std::shared_ptr<nvinfer1::ICudaEngine> mlpEngine = loadEngine(TENSORRT_MLPSAC_PATH, 0, std::cout);
+  IExecutionContext *mlpContext = mlpEngine->createExecutionContext();
+  std::cout << "Created" << std::endl;
+
+  for (int ib = 0; ib < mlpEngine->getNbBindings(); ib++) {
+   std::cout << "MLPSAC " << mlpEngine->getBindingName(ib) << " isInput: " << mlpEngine->bindingIsInput(ib) 
+    << " Dims: " << mlpEngine->getBindingDimensions(ib) << " dtype: " << (int)mlpEngine->getBindingDataType(ib) <<  std::endl; 
+  }
+
 
   samplesCommon::BufferManager buffers(mEngine, 0);
 
@@ -343,7 +346,6 @@ int main(int argc, char **argv)
         yolo_intermediate.layout.dim[3].stride = intermediateDims.d[3];
 
         yolo_intermediate_pub.publish(yolo_intermediate);
-        version_pub.publish(hash_msg);
     }
               
     std::cout << "Took " << ros::Time::now() - start << std::endl;      
