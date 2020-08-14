@@ -29,6 +29,9 @@
 #define OUTPUT_BINDING_NAME3 "446"
 #define INTERMEDIATE_LAYER_BINDING_NAME "300"
 
+#define MLP_INPUT_BINDING_NAME "yolo_intermediate"
+#define MLP_OUTPUT_BINDING_NAME "actions"
+
 #define MAX_SPEED 0.50
 #define OBJECT_DETECTION_THRESHOLD 0.60
 
@@ -251,10 +254,8 @@ int main(int argc, char **argv)
     << " Dims: " << mlpEngine->getBindingDimensions(ib) << " dtype: " << (int)mlpEngine->getBindingDataType(ib) <<  std::endl; 
   }
 
-
-  samplesCommon::BufferManager buffers(mEngine, 0);
-
-  
+  samplesCommon::BufferManager yoloBuffers(mEngine, 0);
+  samplesCommon::BufferManager mlpBuffers(mlpEngine, 0);
 
   while (ros::ok())
   {
@@ -269,7 +270,7 @@ int main(int argc, char **argv)
 
     // Skip the image processing step if there is no image
     if (cv_ptr) {
-        float* hostInputBuffer = static_cast<float*>(buffers.getHostBuffer(INPUT_BINDING_NAME));
+        float* hostInputBuffer = static_cast<float*>(yoloBuffers.getHostBuffer(INPUT_BINDING_NAME));
 
         //NCHW format is offset_nchw(n, c, h, w) = n * CHW + c * HW + h * W + w
         for(int i=0; i < cv_ptr->image.rows; i++) {
@@ -287,15 +288,15 @@ int main(int argc, char **argv)
         CHECK(cudaStreamCreate(&stream));
 
         // Asynchronously copy data from host input buffers to device input buffers
-        buffers.copyInputToDeviceAsync(stream);
+        yoloBuffers.copyInputToDeviceAsync(stream);
 
         // Asynchronously enqueue the inference work
-        if (!context->enqueue(1, buffers.getDeviceBindings().data(), stream, nullptr))
+        if (!context->enqueue(1, yoloBuffers.getDeviceBindings().data(), stream, nullptr))
         {
             return false;
         }
         // Asynchronously copy data from device output buffers to host output buffers
-        buffers.copyOutputToHostAsync(stream);
+        yoloBuffers.copyOutputToHostAsync(stream);
 
         // Wait for the work in the stream to complete
         cudaStreamSynchronize(stream);
@@ -304,15 +305,15 @@ int main(int argc, char **argv)
         cudaStreamDestroy(stream);
 
         //Read back the final classifications
-        const float* detectionOut1 = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME1));
+        const float* detectionOut1 = static_cast<const float*>(yoloBuffers.getHostBuffer(OUTPUT_BINDING_NAME1));
         nvinfer1::Dims dims1 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME1));
         detectBBoxes(detectionOut1, dims1, yolo1);
 
-        const float* detectionOut2 = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME2));
+        const float* detectionOut2 = static_cast<const float*>(yoloBuffers.getHostBuffer(OUTPUT_BINDING_NAME2));
         nvinfer1::Dims dims2 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME2));
         detectBBoxes(detectionOut2, dims2, yolo2);
 
-        const float* detectionOut3 = static_cast<const float*>(buffers.getHostBuffer(OUTPUT_BINDING_NAME3));
+        const float* detectionOut3 = static_cast<const float*>(yoloBuffers.getHostBuffer(OUTPUT_BINDING_NAME3));
         nvinfer1::Dims dims3 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME3));
         detectBBoxes(detectionOut3, dims3, yolo3);
         
@@ -321,7 +322,7 @@ int main(int argc, char **argv)
 
         //Publish the intermediate yolo array
         std_msgs::Float32MultiArray yolo_intermediate;
-        const float* intermediateOut = static_cast<const float*>(buffers.getHostBuffer(INTERMEDIATE_LAYER_BINDING_NAME));
+        const float* intermediateOut = static_cast<const float*>(yoloBuffers.getHostBuffer(INTERMEDIATE_LAYER_BINDING_NAME));
         nvinfer1::Dims intermediateDims = mEngine->getBindingDimensions(mEngine->getBindingIndex(INTERMEDIATE_LAYER_BINDING_NAME));
         yolo_intermediate.data = std::vector<float>(intermediateOut, intermediateOut + intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
         yolo_intermediate.layout.data_offset = 0;
@@ -346,6 +347,52 @@ int main(int argc, char **argv)
         yolo_intermediate.layout.dim[3].stride = intermediateDims.d[3];
 
         yolo_intermediate_pub.publish(yolo_intermediate);
+
+        // Run the intermediate array through the SAC model
+        float* mlpInputBuffer = static_cast<float*>(mlpBuffers.getHostBuffer(MLP_INPUT_BINDING_NAME));
+        memcpy(mlpInputBuffer, intermediateOut, intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
+
+        cudaStream_t mlpStream;
+        CHECK(cudaStreamCreate(&mlpStream));
+
+        // Asynchronously copy data from host input buffers to device input buffers
+        mlpBuffers.copyInputToDeviceAsync(mlpStream);
+
+        // Asynchronously enqueue the inference work
+        if (!mlpContext->enqueue(1, mlpBuffers.getDeviceBindings().data(), mlpStream, nullptr))
+        {
+            return false;
+        }
+        // Asynchronously copy data from device output buffers to host output buffers
+        mlpBuffers.copyOutputToHostAsync(mlpStream);
+
+        // Wait for the work in the stream to complete
+        cudaStreamSynchronize(mlpStream);
+
+        // Release stream
+        cudaStreamDestroy(mlpStream);
+
+        const float* mlpOutput = static_cast<const float*>(mlpBuffers.getHostBuffer(MLP_OUTPUT_BINDING_NAME));
+
+        std::cout << "speed: " << mlpOutput[0] << "   ang: " << mlpOutput[1] << 
+                    "   pan: " << mlpOutput[2] << "   tilt: " << mlpOutput[3] << std::endl;
+
+        geometry_msgs::Twist msg;
+        msg.linear.x = mlpOutput[0];
+        msg.angular.z = mlpOutput[1];
+        cmd_vel_pub.publish(msg);
+
+        dynamixel_workbench_msgs::DynamixelCommand panMsg;
+        panMsg.request.id = PAN_ID;
+        panMsg.request.addr_name = "Goal_Position";
+        panMsg.request.value = mlpOutput[2];
+        pan_tilt_client.call(panMsg);
+
+        dynamixel_workbench_msgs::DynamixelCommand tiltMsg;
+        tiltMsg.request.id = TILT_ID;
+        tiltMsg.request.addr_name = "Goal_Position";
+        tiltMsg.request.value = mlpOutput[3];
+        pan_tilt_client.call(tiltMsg);
     }
               
     std::cout << "Took " << ros::Time::now() - start << std::endl;      
