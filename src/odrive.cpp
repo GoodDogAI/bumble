@@ -188,6 +188,8 @@ int main(int argc, char **argv)
     send_raw_command(serial_port, "f 1\n");
     feedback_msg.motor_pos_1 = std::stof(read_string(serial_port));
     feedback_msg.motor_vel_1 = std::stof(read_string(serial_port));
+
+    feedback_msg.header.stamp = ros::Time::now();
     feedback_pub.publish(feedback_msg);
 
     //std::cout << "took " << ros::Time::now() - start << std::endl;
