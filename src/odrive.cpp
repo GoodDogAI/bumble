@@ -18,6 +18,26 @@ static volatile bool motors_enabled;
 static volatile float vel_left, vel_right;
 ros::Time last_received;
 
+std::string read_string(int fd) {
+  std::string response = "";
+  char buf;
+  int num_read;
+
+  while(num_read = read(fd, &buf, 1)) {
+    // Make sure to read full lines of \r\n
+    if (buf == '\r')
+      continue;
+
+    if (isspace(buf))
+      break;
+
+    response += buf;
+  }
+
+  //Useful for debugging
+  //std::cout << "read_string: '" << response << "'" << std::endl;
+  return response;
+}
 
 void send_raw_command(int fd, const std::string& command) {
   int write_res = write(fd, command.c_str(), command.length());
@@ -35,18 +55,7 @@ int send_int_command(int fd, const std::string& command) {
     return -1;
   }
 
-  std::string response = "";
-  char buf;
-  int num_read;
-
-  while(num_read = read(fd, &buf, 1)) {
-    if (buf == '\n')
-      break;
-
-    response += buf;
-  }
-
-  return std::stoi(response);
+  return std::stoi(read_string(fd));
 }
 
 float send_float_command(int fd, const std::string& command) {
@@ -57,18 +66,7 @@ float send_float_command(int fd, const std::string& command) {
     return NAN;
   }
 
-  std::string response = "";
-  char buf;
-  int num_read;
-
-  while(num_read = read(fd, &buf, 1)) {
-    if (buf == '\n')
-      break;
-
-    response += buf;
-  }
-
-  return std::stof(response);
+  return std::stof(read_string(fd));
 }
 
 
@@ -97,39 +95,15 @@ int main(int argc, char **argv)
    * part of the ROS system.
    */
   ros::init(argc, argv, "odrive");
-
-  /**
-   * NodeHandle is the main access point to communications with the ROS system.
-   * The first NodeHandle constructed will fully initialize this node, and the last
-   * NodeHandle destructed will close down the node.
-   */
   ros::NodeHandle n;
 
   // Set the last message received time so we know if we stop getting messages and have to 
   // shut down the motors.
   last_received = ros::Time::now();
 
-  /**
-   * The advertise() function is how you tell ROS that you want to
-   * publish on a given topic name. This invokes a call to the ROS
-   * master node, which keeps a registry of who is publishing and who
-   * is subscribing. After this advertise() call is made, the master
-   * node will notify anyone who is trying to subscribe to this topic name,
-   * and they will in turn negotiate a peer-to-peer connection with this
-   * node.  advertise() returns a Publisher object which allows you to
-   * publish messages on that topic through a call to publish().  Once
-   * all copies of the returned Publisher object are destroyed, the topic
-   * will be automatically unadvertised.
-   *
-   * The second parameter to advertise() is the size of the message queue
-   * used for publishing messages.  If messages are published more quickly
-   * than we can send them, the number here specifies how many messages to
-   * buffer up before throwing some away.
-   */
   ros::Publisher vbus_pub = n.advertise<std_msgs::Float32>("vbus", 10);
 
   ros::Rate loop_rate(10);
-
 
   int serial_port = open("/dev/ttyACM0", O_RDWR);
 
@@ -156,19 +130,13 @@ int main(int argc, char **argv)
       return errno;
   }
 
-
   ros::Subscriber sub = n.subscribe("cmd_vel", 10, twistCallback);
 
   ROS_INFO("Successfully started odrive communications");
 
   while (ros::ok())
   {
-    // Read and publish the vbus main voltage
-    float vbus_voltage = send_float_command(serial_port, "r vbus_voltage\n");
-
-    std_msgs::Float32 vbus_msg;
-    vbus_msg.data = vbus_voltage;
-    vbus_pub.publish(vbus_msg);
+    ros::Time start = ros::Time::now();
 
     // If you haven't received a message in the last second, then stop the motors
     if (ros::Time::now() - last_received > ros::Duration(1)) {
@@ -201,8 +169,28 @@ int main(int argc, char **argv)
     cmd = "v 1 " + std::to_string(vel_right) + "\n";
     send_raw_command(serial_port, cmd.c_str());
 
-    ros::spinOnce();
 
+    // Read and publish the vbus main voltage
+    float vbus_voltage = send_float_command(serial_port, "r vbus_voltage\n");
+
+    std_msgs::Float32 vbus_msg;
+    vbus_msg.data = vbus_voltage;
+    vbus_pub.publish(vbus_msg);
+
+    // Read and publish the motor feedback values
+    send_raw_command(serial_port, "f 0\n"); 
+    float motor_pos_0 = std::stof(read_string(serial_port));
+    float motor_vel_0 = std::stof(read_string(serial_port));
+
+    send_raw_command(serial_port, "f 1\n");
+    float motor_pos_1 = std::stof(read_string(serial_port));
+    float motor_vel_1 = std::stof(read_string(serial_port));
+
+    
+
+    //std::cout << "took " << ros::Time::now() - start << std::endl;
+
+    ros::spinOnce();
     loop_rate.sleep();
   }
 
