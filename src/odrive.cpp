@@ -2,6 +2,7 @@
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
 #include "geometry_msgs/Twist.h"
+#include "mainbot/ODriveFeedback.h"
 
 #include <iostream>
 #include <fstream>
@@ -102,6 +103,7 @@ int main(int argc, char **argv)
   last_received = ros::Time::now();
 
   ros::Publisher vbus_pub = n.advertise<std_msgs::Float32>("vbus", 10);
+  ros::Publisher feedback_pub = n.advertise<mainbot::ODriveFeedback>("odrive_feedback", 5);
 
   ros::Rate loop_rate(10);
 
@@ -178,15 +180,15 @@ int main(int argc, char **argv)
     vbus_pub.publish(vbus_msg);
 
     // Read and publish the motor feedback values
+    mainbot::ODriveFeedback feedback_msg;
     send_raw_command(serial_port, "f 0\n"); 
-    float motor_pos_0 = std::stof(read_string(serial_port));
-    float motor_vel_0 = std::stof(read_string(serial_port));
+    feedback_msg.motor_pos_0 = std::stof(read_string(serial_port));
+    feedback_msg.motor_vel_0 = std::stof(read_string(serial_port));
 
     send_raw_command(serial_port, "f 1\n");
-    float motor_pos_1 = std::stof(read_string(serial_port));
-    float motor_vel_1 = std::stof(read_string(serial_port));
-
-    
+    feedback_msg.motor_pos_1 = std::stof(read_string(serial_port));
+    feedback_msg.motor_vel_1 = std::stof(read_string(serial_port));
+    feedback_pub.publish(feedback_msg);
 
     //std::cout << "took " << ros::Time::now() - start << std::endl;
 
