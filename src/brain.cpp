@@ -226,9 +226,6 @@ int main(int argc, char **argv)
 
   ros::Rate loop_rate(20);
 
-
-  float forward_mean = 0, angular_mean = 0;
-
   std::random_device rd;  //Will be used to obtain a seed for the random number engine
   std::mt19937 gen(rd());
 
@@ -259,13 +256,6 @@ int main(int argc, char **argv)
 
   while (ros::ok())
   {
-    geometry_msgs::Twist msg;
-
-    msg.linear.x = forward_mean;
-    msg.angular.z = angular_mean;
-
-    cmd_vel_pub.publish(msg);
-
     ros::Time start = ros::Time::now();
 
     // Skip the image processing step if there is no image
