@@ -1,7 +1,9 @@
 Header header
 
-float32 motor_pos_0
-float32 motor_vel_0
+float32 motor_vel_cmd_0
+float32 motor_vel_actual_0
+float32 motor_pos_actual_0
 
-float32 motor_pos_1
-float32 motor_vel_1
+float32 motor_vel_cmd_1
+float32 motor_vel_actual_1
+float32 motor_pos_actual_1

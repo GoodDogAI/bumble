@@ -198,7 +198,7 @@ void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
 }
 
 /**
- * This code just drive the robot around randomly, for the purposes of initializing reinforcement learning training.
+ * This code runs the YOLO backbone network, and then gets its drive commands from an MLP network that was trained offline.
  */
 int main(int argc, char **argv)
 {

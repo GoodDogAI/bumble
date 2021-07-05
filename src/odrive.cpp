@@ -14,7 +14,8 @@
 #include <unistd.h> // write(), read(), close()
 #include <math.h>
 
-#define MAX_SPEED 50.0
+#define MAX_SPEED 2.0
+
 static volatile bool motors_enabled;
 static volatile float vel_left, vel_right;
 ros::Time last_received;
@@ -79,8 +80,18 @@ void twistCallback(const geometry_msgs::Twist::ConstPtr& msg)
 
   float ang = msg->angular.z;
 
-  vel_left = -(msg->linear.x - ang) * MAX_SPEED;
-  vel_right = (msg->linear.x + ang) * MAX_SPEED;
+  vel_left = -1.0f * (msg->linear.x - ang); // -1 to flip direction
+  vel_right = (msg->linear.x + ang);
+
+  if (vel_left > MAX_SPEED)
+    vel_left = MAX_SPEED;
+  if (vel_left < -MAX_SPEED)
+    vel_left = -MAX_SPEED;
+
+  if (vel_right > MAX_SPEED)
+    vel_right = MAX_SPEED;
+  if (vel_right < -MAX_SPEED)
+    vel_right = -MAX_SPEED;
 
   last_received = ros::Time::now();
 }
@@ -182,17 +193,17 @@ int main(int argc, char **argv)
     // Read and publish the motor feedback values
     mainbot::ODriveFeedback feedback_msg;
     send_raw_command(serial_port, "f 0\n"); 
-    feedback_msg.motor_pos_0 = std::stof(read_string(serial_port));
-    feedback_msg.motor_vel_0 = std::stof(read_string(serial_port));
+    feedback_msg.motor_pos_actual_0 = std::stof(read_string(serial_port));
+    feedback_msg.motor_vel_actual_0 = std::stof(read_string(serial_port));
+    feedback_msg.motor_vel_cmd_0 = vel_left;
 
     send_raw_command(serial_port, "f 1\n");
-    feedback_msg.motor_pos_1 = std::stof(read_string(serial_port));
-    feedback_msg.motor_vel_1 = std::stof(read_string(serial_port));
+    feedback_msg.motor_pos_actual_1 = std::stof(read_string(serial_port));
+    feedback_msg.motor_vel_actual_1 = std::stof(read_string(serial_port));
+    feedback_msg.motor_vel_cmd_1 = vel_right;
 
     feedback_msg.header.stamp = ros::Time::now();
     feedback_pub.publish(feedback_msg);
-
-    //std::cout << "took " << ros::Time::now() - start << std::endl;
 
     ros::spinOnce();
     loop_rate.sleep();
