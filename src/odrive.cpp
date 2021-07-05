@@ -14,6 +14,7 @@
 #include <unistd.h> // write(), read(), close()
 #include <math.h>
 
+// Max speed to ever send to the odrive, in rotations per second
 #define MAX_SPEED 2.0
 
 static volatile bool motors_enabled;
