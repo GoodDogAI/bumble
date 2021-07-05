@@ -7,6 +7,7 @@
 #include "sensor_msgs/Image.h"
 #include "geometry_msgs/Twist.h"
 #include "dynamixel_workbench_msgs/DynamixelCommand.h"
+#include "mainbot/HeadFeedback.h"
 
 #include <boost/make_shared.hpp>
 #include <cv_bridge/cv_bridge.h>
@@ -217,6 +218,7 @@ int main(int argc, char **argv)
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
   ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
+  ros::Publisher feedback_pub = n.advertise<mainbot::HeadFeedback>("head_feedback", 5);
   ros::Publisher yolo_intermediate_pub = n.advertise<std_msgs::Float32MultiArray>("yolo_intermediate", 2);
 
 
@@ -383,6 +385,13 @@ int main(int argc, char **argv)
         tiltMsg.request.addr_name = "Goal_Position";
         tiltMsg.request.value = mlpOutput[3];
         pan_tilt_client.call(tiltMsg);
+
+        // Publish the feedback command of the pan/tilt so we can log it, otherwise ROS service parameters are not logged
+        mainbot::HeadFeedback feedback_msg;
+        feedback_msg.pan_command = mlpOutput[2];
+        feedback_msg.tilt_command = mlpOutput[3];
+        feedback_msg.header.stamp = ros::Time::now();
+        feedback_pub.publish(feedback_msg);
     }
               
     std::cout << "Took " << ros::Time::now() - start << std::endl;      

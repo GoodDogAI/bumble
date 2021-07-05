@@ -58,6 +58,7 @@ find_package(CUDA)
 add_message_files(
   FILES
   ODriveFeedback.msg
+  HeadFeedback.msg
 )
 
 ## Generate services in the 'srv' folder
