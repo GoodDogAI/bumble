@@ -10,16 +10,9 @@
 #include <random>
 #include <math.h>
 
-#define MAX_SPEED 0.50
-
 #define TILT_ID 10
 #define PAN_ID 11
 
-std::uniform_real_distribution<> FORWARD_SPEED_DIST(-0.50, 0.50);
-std::uniform_real_distribution<> ANGULAR_RATE_DIST(-0.50, 0.50);
-
-std::uniform_real_distribution<> PAN_DIST(350, 700);
-std::uniform_real_distribution<> TILT_DIST(475, 725);
 
 /**
  * This code just drive the robot around randomly, for the purposes of initializing reinforcement learning training.
@@ -38,6 +31,16 @@ int main(int argc, char **argv)
    * NodeHandle destructed will close down the node.
    */
   ros::NodeHandle n;
+  ros::NodeHandle nhPriv("~");
+
+  std::uniform_real_distribution<> FORWARD_SPEED_DIST(nhPriv.param<float>("forward_speed_min", -0.50),
+                                                      nhPriv.param<float>("forward_speed_max", 0.50));
+
+  std::uniform_real_distribution<> ANGULAR_RATE_DIST(nhPriv.param<float>("angular_speed_min", -0.50),
+                                                     nhPriv.param<float>("angular_speed_max", 0.50));
+
+  std::uniform_real_distribution<> PAN_DIST(350, 700);
+  std::uniform_real_distribution<> TILT_DIST(475, 725);
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
   ros::Publisher feedback_pub = n.advertise<mainbot::HeadFeedback>("head_feedback", 5);
@@ -91,11 +94,6 @@ int main(int argc, char **argv)
     feedback_msg.tilt_command = head_tilt;
     feedback_msg.header.stamp = ros::Time::now();
     feedback_pub.publish(feedback_msg);
-
-  ROS_INFO("Sending random direction %f, %f, %f,  Ang %f, %f, %f",
-    msg.linear.x, msg.linear.y, msg.linear.z,
-    msg.angular.x, msg.angular.y, msg.angular.z);
-
 
     ros::spinOnce();
 

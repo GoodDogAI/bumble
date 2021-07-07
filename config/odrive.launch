@@ -1,0 +1,5 @@
+<launch>
+  <node name="odrive" pkg="mainbot" type="odrive"
+        required="true" output="screen">
+  </node>
+</launch>

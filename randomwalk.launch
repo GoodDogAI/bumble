@@ -1,0 +1,14 @@
+<launch>
+  <include file="$(find mainbot)/config/odrive.launch"/>
+  <include file="$(find mainbot)/config/pan_tilt_controller.launch"/>
+  <include file="$(find mainbot)/config/camera.launch"/>
+
+   <node name="randomwalk" pkg="mainbot" type="randomwalk"
+        required="true" output="screen">
+       <param name="forward_speed_min" value="-0.50"/>
+       <param name="forward_speed_max" value="0.50"/>
+
+       <param name="angular_speed_min" value="-0.50"/>
+       <param name="angular_speed_max" value="0.50"/>
+  </node>
+</launch>
