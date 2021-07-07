@@ -40,7 +40,7 @@ int main(int argc, char **argv)
                                             n.param<float>("/pan_tilt/pan_max_angle", 90.0) * n.param<float>("/pan_tilt/pan_steps_per_degree", DEFAULT_STEPS_PER_DEGREE));
 
   std::uniform_real_distribution<> TILT_DIST(n.param<float>("/pan_tilt/tilt_min_angle", 0.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE),
-                                            n.param<float>("/pan_tilt/tilt_max_angle", 90.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE));
+                                             n.param<float>("/pan_tilt/tilt_max_angle", 90.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE));
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 2);
   ros::Publisher feedback_pub = n.advertise<mainbot::HeadFeedback>("head_feedback", 2);
