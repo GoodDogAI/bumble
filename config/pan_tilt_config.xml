@@ -1,0 +1,15 @@
+<launch>
+    <group ns="/pan_tilt">
+        <param name="pan_id" value="11"/> <!-- Must match value in pan_tilt.yaml -->
+        <param name="pan_steps_per_degree" value="3.41333333333"/> <!-- 1024 steps per 300 degrees on AX-18A-->
+        <param name="pan_min_angle" value="102.54"/>
+        <param name="pan_max_angle" value="205.07"/>
+        <param name="pan_center_angle" value="150.0"/> <!-- 512 steps out of 1024 in our case -->
+
+        <param name="tilt_id" value="10"/> <!-- Must match value in pan_tilt.yaml -->
+        <param name="tilt_steps_per_degree" value="3.41333333333"/> <!-- 1024 steps per 300 degrees on AX-18A-->
+        <param name="tilt_min_angle" value="139.16"/>
+        <param name="tilt_max_angle" value="212.40"/>
+        <param name="tilt_level_angle" value="193.94"/> <!-- Calibrated with a level -->
+    </group>
+</launch>
