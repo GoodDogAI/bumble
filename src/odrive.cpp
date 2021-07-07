@@ -14,8 +14,7 @@
 #include <unistd.h> // write(), read(), close()
 #include <math.h>
 
-// Max speed to ever send to the odrive, in rotations per second
-#define MAX_SPEED 2.0
+static volatile float MAX_SPEED;
 
 static volatile bool motors_enabled;
 static volatile float vel_left, vel_right;
@@ -109,6 +108,10 @@ int main(int argc, char **argv)
    */
   ros::init(argc, argv, "odrive");
   ros::NodeHandle n;
+  ros::NodeHandle nhPriv("~");
+
+  // Read in the max_speed and other parameters
+  MAX_SPEED = nhPriv.param<float>("max_speed", 2.0);
 
   // Set the last message received time so we know if we stop getting messages and have to 
   // shut down the motors.

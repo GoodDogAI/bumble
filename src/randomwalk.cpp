@@ -42,8 +42,8 @@ int main(int argc, char **argv)
   std::uniform_real_distribution<> PAN_DIST(350, 700);
   std::uniform_real_distribution<> TILT_DIST(475, 725);
 
-  ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
-  ros::Publisher feedback_pub = n.advertise<mainbot::HeadFeedback>("head_feedback", 5);
+  ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 2);
+  ros::Publisher feedback_pub = n.advertise<mainbot::HeadFeedback>("head_feedback", 2);
 
   ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command");
 
