@@ -74,9 +74,9 @@ float send_float_command(int fd, const std::string& command) {
 
 void twistCallback(const geometry_msgs::Twist::ConstPtr& msg)
 {
-  ROS_INFO("Linear %f, %f, %f,  Ang %f, %f, %f", 
-    msg->linear.x, msg->linear.y, msg->linear.z,
-    msg->angular.x, msg->angular.y, msg->angular.z);
+  // ROS_INFO("Linear %f, %f, %f,  Ang %f, %f, %f", 
+  //   msg->linear.x, msg->linear.y, msg->linear.z,
+  //   msg->angular.x, msg->angular.y, msg->angular.z);
 
   float ang = msg->angular.z;
 

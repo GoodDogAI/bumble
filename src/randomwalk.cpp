@@ -81,7 +81,6 @@ int main(int argc, char **argv)
       pan_tilt_client.call(tiltMsg);
     } 
 
-
     geometry_msgs::Twist msg;
 
     msg.linear.x = forward_mean;
