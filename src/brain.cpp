@@ -1,26 +1,131 @@
 #include "ros/ros.h"
+
+#include "std_msgs/String.h"
+#include "std_msgs/MultiArrayLayout.h"
+#include "std_msgs/MultiArrayDimension.h"
+#include "std_msgs/Float32MultiArray.h"
 #include "sensor_msgs/Image.h"
 #include "geometry_msgs/Twist.h"
 #include "dynamixel_workbench_msgs/DynamixelCommand.h"
+#include "mainbot/HeadFeedback.h"
 
 #include <boost/make_shared.hpp>
+#include <cv_bridge/cv_bridge.h>
 
-#include <torch/torch.h>
-#include <torch/script.h>
+#include "NvInfer.h"
+#include "tensorrt_common/buffers.h"
 
 #include <iostream>
+
 #include <fstream>
 #include <random>
 #include <math.h>
 
+#define TENSORRT_YOLO_PATH "/home/robot/yolov5s.tensorrt"
+#define TENSORRT_MLPSAC_PATH "/home/robot/mlp.tensorrt"
+
+#define INPUT_BINDING_NAME "images"
+#define OUTPUT_BINDING_NAME1 "output"
+#define OUTPUT_BINDING_NAME2 "427"
+#define OUTPUT_BINDING_NAME3 "446"
+#define INTERMEDIATE_LAYER_BINDING_NAME "300"
+
+#define MLP_INPUT_BINDING_NAME "yolo_intermediate"
+#define MLP_OUTPUT_BINDING_NAME "actions"
+
 #define MAX_SPEED 0.50
+#define OBJECT_DETECTION_THRESHOLD 0.60
 
 #define TILT_ID 10
 #define PAN_ID 11
 
+using namespace nvinfer1;
+
+cv_bridge::CvImagePtr cv_ptr;
 ros::Time last_image_received;
 
-torch::Tensor image_input = torch::zeros({1, 3, 480, 640}); // N C H W format
+inline float Logist(float data){ return 1.0f / (1.0f + expf(-data)); };
+
+template <typename T>
+struct TrtDestroyer
+{
+    void operator()(T* t)
+    {
+        t->destroy();
+    }
+};
+
+template <typename T>
+using TrtUniquePtr = std::unique_ptr<T, TrtDestroyer<T>>;
+
+class Logger : public ILogger           
+ {
+     void log(Severity severity, const char* msg) override
+     {
+         // suppress info-level messages
+         if (severity != Severity::kINFO)
+             std::cout << msg << std::endl;
+     }
+ } gLogger;
+
+std::shared_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& engine, int DLACore, std::ostream& err)
+{
+    std::ifstream engineFile(engine, std::ios::binary);
+    if (!engineFile)
+    {
+        err << "Error opening engine file: " << engine << std::endl;
+        return nullptr;
+    }
+
+    engineFile.seekg(0, engineFile.end);
+    long int fsize = engineFile.tellg();
+    engineFile.seekg(0, engineFile.beg);
+
+    std::vector<char> engineData(fsize);
+    engineFile.read(engineData.data(), fsize);
+    if (!engineFile)
+    {
+        err << "Error loading engine file: " << engine << std::endl;
+        return nullptr;
+    }
+
+    TrtUniquePtr<IRuntime> runtime{createInferRuntime(gLogger)};
+    if (DLACore != -1)
+    {
+        runtime->setDLACore(DLACore);
+    }
+
+    return std::shared_ptr<nvinfer1::ICudaEngine>(runtime->deserializeCudaEngine(engineData.data(), fsize, nullptr),
+                                                  samplesCommon::InferDeleter());
+}
+
+static constexpr int INPUT_H = 480;
+static constexpr int INPUT_W = 640;
+static constexpr int CLASS_NUM = 80;
+static constexpr int CHECK_COUNT = 3;
+
+struct YoloKernel
+{
+    int width;
+    int height;
+    float anchors[CHECK_COUNT*2];
+};
+
+static constexpr YoloKernel yolo1 = {
+    INPUT_W / 32,
+    INPUT_H / 32,
+    {116,90,  156,198,  373,326}
+};
+static constexpr YoloKernel yolo2 = {
+    INPUT_W / 16,
+    INPUT_H / 16,
+    {30,61,  62,45,  59,119}
+};
+static constexpr YoloKernel yolo3 = {
+    INPUT_W / 8,
+    INPUT_H / 8,
+    {10,13,  16,30,  33,23}
+};
 
 std::vector<std::string> yolo_class_names = {
   "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign",
@@ -38,24 +143,63 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
   ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
   img->encoding.c_str(), img->width, img->height);
 
-  // Load the data into a tensor, not that it doesn't take ownership of the ROS message
-  auto temp_tensor = torch::from_blob(const_cast<uint8_t*>(&img->data[0]), 
-                                      {img->height, img->width},
-                                      torch::TensorOptions().dtype(torch::kUInt8));
-
-  // Cast the float in the range 0 to 1                                      
-  temp_tensor = temp_tensor.to(torch::kFloat) / 255.0;
-  
-  // Set the dimensions, NCHW format is the standard for pytorch, also expand out to three color dimensions
-  temp_tensor = temp_tensor.view({1, 1, img->height, img->width}).expand({-1, 3, -1, -1});
-
-  image_input = temp_tensor;
-
+  cv_ptr = cv_bridge::toCvCopy(img, "rgb8");
   last_image_received = ros::Time::now();
 }
 
+void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
+    //NCHW format
+    for (int c = 0; c < CHECK_COUNT; c++) {
+        for (int row = 0; row < dims.d[2]; row++) {
+            for (int col = 0; col < dims.d[3]; col++) {
+                float box_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                        row * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[4] +
+                                                        4]);
+                //std::cout << box_prob << std::endl;
+
+                if (box_prob < OBJECT_DETECTION_THRESHOLD) 
+                    continue;
+
+                for (int obj_class = 0; obj_class < CLASS_NUM; obj_class++ ){
+                    float class_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                            row * dims.d[3] * dims.d[4] +
+                                                            col * dims.d[4] +
+                                                            5 + obj_class]);
+
+                    class_prob = class_prob * box_prob;                                                                
+
+                    if (class_prob >= OBJECT_DETECTION_THRESHOLD) {
+                        std::cout << "Found class " << yolo_class_names[obj_class] << c << std::endl;
+                        float x = (col - 0.5f + 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                        row * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[4] +
+                                                        0])) * INPUT_W / kernel.width;
+                        float y = (row - 0.5f + 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                        row * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[4] +
+                                                        1])) * INPUT_H / kernel.height;
+                        float width = 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                        row * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[4] +
+                                                        2]);
+                        width = width * width * kernel.anchors[2*c];
+                        float height = 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
+                                                        row * dims.d[3] * dims.d[4] +
+                                                        col * dims.d[4] +
+                                                        3]);
+                        height = height * height * kernel.anchors[2*c + 1];
+                        std::cout << cv::Rect(x,y,width,height) << std::endl;
+                        cv::rectangle(cv_ptr->image, cv::Rect(x - width / 2,y - height / 2,width,height), CV_RGB(255,0,0));
+                    }                                                                
+                }
+            }
+        }
+    }
+}
+
 /**
- * This code just drive the robot around randomly, for the purposes of initializing reinforcement learning training.
+ * This code runs the YOLO backbone network, and then gets its drive commands from an MLP network that was trained offline.
  */
 int main(int argc, char **argv)
 {
@@ -74,110 +218,185 @@ int main(int argc, char **argv)
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
   ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
+  ros::Publisher feedback_pub = n.advertise<mainbot::HeadFeedback>("head_feedback", 5);
+  ros::Publisher yolo_intermediate_pub = n.advertise<std_msgs::Float32MultiArray>("yolo_intermediate", 2);
+
+
   ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command");
 
   ros::Subscriber sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
 
   ros::Rate loop_rate(20);
 
-
-  float forward_mean = 0, angular_mean = 0;
-
   std::random_device rd;  //Will be used to obtain a seed for the random number engine
   std::mt19937 gen(rd());
 
-  torch::Device device = torch::kCPU;
-  if (torch::cuda::is_available()) {
-    std::cout << "CUDA is available! Using the GPU." << std::endl;
-    device = torch::kCUDA;
+  //Load and print stats on the YOLO inference engine
+  std::cout << "Creating YOLO Inference engine and execution context" << std::endl;
+  std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine(TENSORRT_YOLO_PATH, 0, std::cout);
+  IExecutionContext *context = mEngine->createExecutionContext();
+  std::cout << "Created" << std::endl;
+
+  for (int ib = 0; ib < mEngine->getNbBindings(); ib++) {
+   std::cout << "YOLO " << mEngine->getBindingName(ib) << " isInput: " << mEngine->bindingIsInput(ib) 
+    << " Dims: " << mEngine->getBindingDimensions(ib) << " dtype: " << (int)mEngine->getBindingDataType(ib) <<  std::endl; 
   }
 
-  torch::jit::script::Module yolov5;
-  try {
-    // Deserialize the ScriptModule from a file using torch::jit::load().
-    yolov5 = torch::jit::load("/home/robot/yolov5s.torchscript");
-    std::cout << "Loaded the model" << std::endl;
-    yolov5.to(device);
-    std::cout << "Moved to device" << std::endl;
-  }
-  catch (const c10::Error& e) {
-    std::cerr << "error loading the model\n";
-    return -1;
+
+  std::cout << "Creating SAC MLP Inference engine and execution context" << std::endl;
+  std::shared_ptr<nvinfer1::ICudaEngine> mlpEngine = loadEngine(TENSORRT_MLPSAC_PATH, 0, std::cout);
+  IExecutionContext *mlpContext = mlpEngine->createExecutionContext();
+  std::cout << "Created" << std::endl;
+
+  for (int ib = 0; ib < mlpEngine->getNbBindings(); ib++) {
+   std::cout << "MLPSAC " << mlpEngine->getBindingName(ib) << " isInput: " << mlpEngine->bindingIsInput(ib) 
+    << " Dims: " << mlpEngine->getBindingDimensions(ib) << " dtype: " << (int)mlpEngine->getBindingDataType(ib) <<  std::endl; 
   }
 
-//  torch::Tensor rand_input = torch::rand({1, 3, 640, 640}).to(device);
-
+  samplesCommon::BufferManager yoloBuffers(mEngine, 0);
+  samplesCommon::BufferManager mlpBuffers(mlpEngine, 0);
 
   while (ros::ok())
   {
-    geometry_msgs::Twist msg;
-
-    msg.linear.x = forward_mean;
-    msg.angular.z = angular_mean;
-
-    cmd_vel_pub.publish(msg);
-
     ros::Time start = ros::Time::now();
 
-    auto yolo_output = yolov5.forward({image_input.to(device)}).toTuple();
-    auto yolo_features = yolo_output->elements()[0].toTensor().cpu();
-    std::cout << "Yolo ran in " << ros::Time::now() - start << std::endl;
+    // Skip the image processing step if there is no image
+    if (cv_ptr) {
+        float* hostInputBuffer = static_cast<float*>(yoloBuffers.getHostBuffer(INPUT_BINDING_NAME));
 
-    std::cout << "input shape " << image_input.sizes() << std::endl;
-    std::cout << "yolo shape " << yolo_features.sizes() << std::endl;      
+        //NCHW format is offset_nchw(n, c, h, w) = n * CHW + c * HW + h * W + w
+        for(int i=0; i < cv_ptr->image.rows; i++) {
+            // pointer to first pixel in row
+            cv::Vec3b* pixel = cv_ptr->image.ptr<cv::Vec3b>(i);
 
-    float threshold = 0.6;
-    auto frame_access = yolo_features.accessor<float,3>();
-
-    auto tagged_output_image = image_input.clone();
-
-    auto frame_bboxes = torch::zeros( {yolo_features.sizes()[1], 4});
-    frame_bboxes.index_put_({torch::indexing::Slice(), 0}, (yolo_features.index({0, torch::indexing::Slice(), 0}) - yolo_features.index({0, torch::indexing::Slice(), 2}) / 2.0));
-    frame_bboxes.index_put_({torch::indexing::Slice(), 1}, (yolo_features.index({0, torch::indexing::Slice(), 1}) - yolo_features.index({0, torch::indexing::Slice(), 3}) / 2.0));
-    frame_bboxes.index_put_({torch::indexing::Slice(), 2}, (yolo_features.index({0, torch::indexing::Slice(), 0}) + yolo_features.index({0, torch::indexing::Slice(), 2}) / 2.0));
-    frame_bboxes.index_put_({torch::indexing::Slice(), 3}, (yolo_features.index({0, torch::indexing::Slice(), 1}) + yolo_features.index({0, torch::indexing::Slice(), 3}) / 2.0));
-    frame_bboxes = frame_bboxes.round().to(torch::kInt32);
-
-    auto bbox_access = frame_bboxes.accessor<int,2>();
-
-    for(int32_t i = 0; i < yolo_features.sizes()[1]; i++) {
-       float base_confidence = frame_access[0][i][4];
-
-       if (base_confidence >= threshold) {
-          for(int32_t class_index = 0; class_index < 80; class_index++) {
-            if( frame_access[0][i][class_index + 5] * base_confidence >= threshold) {
-              std::cout << "Saw class " << yolo_class_names[class_index] << 
-                  " at " << bbox_access[i][0] << "x" << bbox_access[i][1] << " to " << bbox_access[i][2] << "x" << bbox_access[i][3] << std::endl;
-
-              std::cout << frame_access[0][i][0] << std::endl;
-
-              tagged_output_image.index_put_({0, 1, torch::indexing::Slice(bbox_access[i][1], bbox_access[i][3]), torch::indexing::Slice(bbox_access[i][0], bbox_access[i][2])}, 1.0);
-              
-              //This works to just put a green square in a constant place
-              //tagged_output_image.index_put_({0, 1, torch::indexing::Slice(50, 150), torch::indexing::Slice(200, 300)}, 1.0);
+            for(int j=0; j < cv_ptr->image.cols; j++) {
+                hostInputBuffer[0 * cv_ptr->image.rows * cv_ptr->image.cols + i * cv_ptr->image.cols + j] = pixel[j][0] / 255.0;
+                hostInputBuffer[1 * cv_ptr->image.rows * cv_ptr->image.cols + i * cv_ptr->image.cols + j] = pixel[j][1] / 255.0;
+                hostInputBuffer[2 * cv_ptr->image.rows * cv_ptr->image.cols + i * cv_ptr->image.cols + j] = pixel[j][2] / 255.0;
             }
-          }
-       }
-    }      
+        }
+    
+        cudaStream_t stream;
+        CHECK(cudaStreamCreate(&stream));
 
+        // Asynchronously copy data from host input buffers to device input buffers
+        yoloBuffers.copyInputToDeviceAsync(stream);
 
-    //Copies an image from a tensor back into a ROS Image message and publishes it
-    sensor_msgs::ImagePtr yolo_msg = boost::make_shared<sensor_msgs::Image>();
-    yolo_msg->header = std_msgs::Header();
-    yolo_msg->width = 640;
-    yolo_msg->height = 480;
-    yolo_msg->encoding = "rgb8";
-    yolo_msg->is_bigendian = false;
-    yolo_msg->step = 640 * 3;
-    size_t size = yolo_msg->step * yolo_msg->height;
-    yolo_msg->data.resize(size);
-    memcpy((char*)(&yolo_msg->data[0]), (tagged_output_image * 255).contiguous(torch::MemoryFormat::ChannelsLast).to(torch::kUInt8).data_ptr(), size);
+        // Asynchronously enqueue the inference work
+        if (!context->enqueue(1, yoloBuffers.getDeviceBindings().data(), stream, nullptr))
+        {
+            return false;
+        }
+        // Asynchronously copy data from device output buffers to host output buffers
+        yoloBuffers.copyOutputToHostAsync(stream);
 
-    debug_img_pub.publish(yolo_msg);
-                          
+        // Wait for the work in the stream to complete
+        cudaStreamSynchronize(stream);
+
+        // Release stream
+        cudaStreamDestroy(stream);
+
+        //Read back the final classifications
+        const float* detectionOut1 = static_cast<const float*>(yoloBuffers.getHostBuffer(OUTPUT_BINDING_NAME1));
+        nvinfer1::Dims dims1 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME1));
+        detectBBoxes(detectionOut1, dims1, yolo1);
+
+        const float* detectionOut2 = static_cast<const float*>(yoloBuffers.getHostBuffer(OUTPUT_BINDING_NAME2));
+        nvinfer1::Dims dims2 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME2));
+        detectBBoxes(detectionOut2, dims2, yolo2);
+
+        const float* detectionOut3 = static_cast<const float*>(yoloBuffers.getHostBuffer(OUTPUT_BINDING_NAME3));
+        nvinfer1::Dims dims3 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME3));
+        detectBBoxes(detectionOut3, dims3, yolo3);
+        
+        //Draws the inference data back into a ROS Image message and publishes it
+        debug_img_pub.publish(cv_ptr->toImageMsg());
+
+        //Publish the intermediate yolo array
+        std_msgs::Float32MultiArray yolo_intermediate;
+        const float* intermediateOut = static_cast<const float*>(yoloBuffers.getHostBuffer(INTERMEDIATE_LAYER_BINDING_NAME));
+        nvinfer1::Dims intermediateDims = mEngine->getBindingDimensions(mEngine->getBindingIndex(INTERMEDIATE_LAYER_BINDING_NAME));
+        yolo_intermediate.data = std::vector<float>(intermediateOut, intermediateOut + intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
+        yolo_intermediate.layout.data_offset = 0;
+        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+        yolo_intermediate.layout.dim[0].label = "N";
+        yolo_intermediate.layout.dim[0].size = intermediateDims.d[0];
+        yolo_intermediate.layout.dim[0].stride = intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3];
+
+        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+        yolo_intermediate.layout.dim[1].label = "C";
+        yolo_intermediate.layout.dim[1].size = intermediateDims.d[1];
+        yolo_intermediate.layout.dim[1].stride = intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3];
+
+        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+        yolo_intermediate.layout.dim[2].label = "H";
+        yolo_intermediate.layout.dim[2].size = intermediateDims.d[2];
+        yolo_intermediate.layout.dim[2].stride = intermediateDims.d[2] * intermediateDims.d[3];
+
+        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+        yolo_intermediate.layout.dim[3].label = "W";
+        yolo_intermediate.layout.dim[3].size = intermediateDims.d[3];
+        yolo_intermediate.layout.dim[3].stride = intermediateDims.d[3];
+
+        yolo_intermediate_pub.publish(yolo_intermediate);
+
+        // Run the intermediate array through the SAC model
+        float* mlpInputBuffer = static_cast<float*>(mlpBuffers.getHostBuffer(MLP_INPUT_BINDING_NAME));
+        memcpy(mlpInputBuffer, intermediateOut, intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
+
+        cudaStream_t mlpStream;
+        CHECK(cudaStreamCreate(&mlpStream));
+
+        // Asynchronously copy data from host input buffers to device input buffers
+        mlpBuffers.copyInputToDeviceAsync(mlpStream);
+
+        // Asynchronously enqueue the inference work
+        if (!mlpContext->enqueue(1, mlpBuffers.getDeviceBindings().data(), mlpStream, nullptr))
+        {
+            return false;
+        }
+        // Asynchronously copy data from device output buffers to host output buffers
+        mlpBuffers.copyOutputToHostAsync(mlpStream);
+
+        // Wait for the work in the stream to complete
+        cudaStreamSynchronize(mlpStream);
+
+        // Release stream
+        cudaStreamDestroy(mlpStream);
+
+        const float* mlpOutput = static_cast<const float*>(mlpBuffers.getHostBuffer(MLP_OUTPUT_BINDING_NAME));
+
+        std::cout << "speed: " << mlpOutput[0] << "   ang: " << mlpOutput[1] << 
+                    "   pan: " << mlpOutput[2] << "   tilt: " << mlpOutput[3] << std::endl;
+
+        geometry_msgs::Twist msg;
+        msg.linear.x = mlpOutput[0];
+        msg.angular.z = mlpOutput[1];
+        cmd_vel_pub.publish(msg);
+
+        dynamixel_workbench_msgs::DynamixelCommand panMsg;
+        panMsg.request.id = PAN_ID;
+        panMsg.request.addr_name = "Goal_Position";
+        panMsg.request.value = mlpOutput[2];
+        pan_tilt_client.call(panMsg);
+
+        dynamixel_workbench_msgs::DynamixelCommand tiltMsg;
+        tiltMsg.request.id = TILT_ID;
+        tiltMsg.request.addr_name = "Goal_Position";
+        tiltMsg.request.value = mlpOutput[3];
+        pan_tilt_client.call(tiltMsg);
+
+        // Publish the feedback command of the pan/tilt so we can log it, otherwise ROS service parameters are not logged
+        mainbot::HeadFeedback feedback_msg;
+        feedback_msg.pan_command = mlpOutput[2];
+        feedback_msg.tilt_command = mlpOutput[3];
+        feedback_msg.header.stamp = ros::Time::now();
+        feedback_pub.publish(feedback_msg);
+    }
+              
+    std::cout << "Took " << ros::Time::now() - start << std::endl;      
 
     ros::spinOnce();
-
     loop_rate.sleep();
   }
 

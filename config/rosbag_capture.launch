@@ -1,0 +1,12 @@
+<launch>
+  <node pkg="rosbag" type="record" name="rosbag_record_cam"
+    args="record -a -j --buffsize=2048 --split --duration=2m -o /media/card/record" />
+
+    <!-- 
+        -a record everything
+        -j BZ2 compress
+        -buffsize internal buffer size in megabtyes
+        -split splits when the max size or duration is reached
+        -o output location prefix
+    -->
+</launch>

@@ -28,6 +28,7 @@ with trt.Builder(TRT_LOGGER) as builder, builder.create_network() as network, tr
     print('Completed parsing of ONNX file')
     print('Building an engine from file {}; this may take a while...'.format(onnx_file_path))
     engine = builder.build_cuda_engine(network)
+    
     print("Completed creating Engine")
     with open(engine_file_path, "wb") as f:
         f.write(engine.serialize())

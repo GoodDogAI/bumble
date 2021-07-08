@@ -2,30 +2,24 @@ cmake_minimum_required(VERSION 2.8.3)
 project(mainbot)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+add_compile_options(-std=c++14)
 
-# Note, please be sure to invoke catkin with the proper toolchain file
-# Because pytorch stuff will only work with Clang, not GCC
-# catkin_make --cmake-args -DCMAKE_TOOLCHAIN_FILE=/home/robot/catkin_ws/src/mainbot/toolchain.cmake
-
-## Add these CMAKE configs to work with a custom-built pytorch rather than
-## the prepackaged one: https://github.com/facebookresearch/Detectron/issues/715
-set(ATen_DIR "$ENV{HOME}/pytorch/torch/share/cmake/ATen/")
-set(Caffe2_DIR "$ENV{HOME}/pytorch/torch/share/cmake/Caffe2/")
-set(Gloo_DIR "$ENV{HOME}/pytorch/torch/share/cmake/Gloo/")
-set(tensorpipe_DIR "$ENV{HOME}/pytorch/torch/share/cmake/tensorpipe/")
-set(Torch_DIR "$ENV{HOME}/pytorch/torch/share/cmake/Torch/")
-find_package(Torch REQUIRED)
-
-
+set(CUDA_INSTALL_DIR /usr/local/cuda)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
+
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
+  sensor_msgs
+  cv_bridge 
+  message_generation
 )
+
+find_package(CUDA)
+
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -61,11 +55,11 @@ find_package(catkin REQUIRED COMPONENTS
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+add_message_files(
+  FILES
+  ODriveFeedback.msg
+  HeadFeedback.msg
+)
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -82,10 +76,11 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs
-# )
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+  mainbot
+)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -120,7 +115,8 @@ catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES mainbot
 #  CATKIN_DEPENDS roscpp std_msgs
-#  DEPENDS system_lib
+   CATKIN_DEPENDS message_runtime
+#  DEPENDS CUDA
 )
 
 ###########
@@ -132,6 +128,7 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  ${CUDA_INSTALL_DIR}/include
 )
 
 ## Declare a C++ library
@@ -150,7 +147,7 @@ include_directories(
 # add_executable(${PROJECT_NAME}_node src/mainbot_node.cpp)
 add_executable(odrive src/odrive.cpp)
 add_executable(randomwalk src/randomwalk.cpp)
-add_executable(brain src/brain.cpp)
+cuda_add_executable(brain src/brain.cpp src/tensorrt_common/logger.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -159,7 +156,7 @@ add_executable(brain src/brain.cpp)
 # set_target_properties(${PROJECT_NAME}_node PROPERTIES OUTPUT_NAME node PREFIX "")
 
 # Set CXX standard to support libtorch ABI
-set_property(TARGET brain PROPERTY CXX_STANDARD 14)
+set_property(TARGET brain PROPERTY CXX_STANDARD 17)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
@@ -175,9 +172,16 @@ target_link_libraries(odrive
 target_link_libraries(randomwalk
   ${catkin_LIBRARIES}
 )
+
 target_link_libraries(brain
   ${catkin_LIBRARIES}
-  "${TORCH_LIBRARIES}"
+  ${CUDART_LIB}
+  ${CUBLAS_LIB}
+  ${CUDNN_LIB}
+  nvinfer
+  ${RT_LIB}
+  ${CMAKE_DL_LIBS}
+  ${CMAKE_THREAD_LIBS_INIT}
 )
 
 #############
