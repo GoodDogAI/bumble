@@ -29,12 +29,13 @@ int main(int argc, char **argv)
    * NodeHandle destructed will close down the node.
    */
   ros::NodeHandle n;
+  ros::NodeHandle nhPriv("~");
 
-  std::uniform_real_distribution<> FORWARD_SPEED_DIST(n.param<float>("forward_speed_min", -0.50),
-                                                      n.param<float>("forward_speed_max", 0.50));
+  std::uniform_real_distribution<> FORWARD_SPEED_DIST(nhPriv.param<float>("forward_speed_min", -0.50),
+                                                      nhPriv.param<float>("forward_speed_max", 0.50));
 
-  std::uniform_real_distribution<> ANGULAR_RATE_DIST(n.param<float>("angular_speed_min", -0.50),
-                                                     n.param<float>("angular_speed_max", 0.50));
+  std::uniform_real_distribution<> ANGULAR_RATE_DIST(nhPriv.param<float>("angular_speed_min", -0.50),
+                                                     nhPriv.param<float>("angular_speed_max", 0.50));
 
   std::uniform_real_distribution<> PAN_DIST(n.param<float>("/pan_tilt/pan_min_angle", 0.0) * n.param<float>("/pan_tilt/pan_steps_per_degree", DEFAULT_STEPS_PER_DEGREE),
                                             n.param<float>("/pan_tilt/pan_max_angle", 90.0) * n.param<float>("/pan_tilt/pan_steps_per_degree", DEFAULT_STEPS_PER_DEGREE));
@@ -50,7 +51,7 @@ int main(int argc, char **argv)
   ros::Rate loop_rate(20);
 
   ros::Time recalc_means = ros::Time::now();
-  ros::Duration recalc_freq = ros::Duration(n.param<float>("change_frequency_secs", 1.0));
+  ros::Duration recalc_freq = ros::Duration(nhPriv.param<float>("change_frequency_secs", 1.0));
 
   float forward_mean = 0, angular_mean = 0;
   float head_pan = 0, head_tilt = 0;

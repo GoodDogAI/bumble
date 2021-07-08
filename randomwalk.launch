@@ -9,8 +9,8 @@
         required="true" output="screen">
        <param name="change_frequency_secs" value="2.0"/>
 
-       <param name="forward_speed_min" value="-0.50"/>
-       <param name="forward_speed_max" value="0.50"/>
+       <param name="forward_speed_min" value="-0.35"/>
+       <param name="forward_speed_max" value="0.35"/>
 
        <param name="angular_speed_min" value="-0.50"/>
        <param name="angular_speed_max" value="0.50"/>
