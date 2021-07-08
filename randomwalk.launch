@@ -3,10 +3,11 @@
   <include file="$(find mainbot)/config/pan_tilt_config.xml"/>
   <include file="$(find mainbot)/config/pan_tilt_controller.launch"/>
   <include file="$(find mainbot)/config/camera.launch"/>
+  <include file="$(find mainbot)/config/rosbag_capture.launch"/>
 
-   <node name="randomwalk" pkg="mainbot" type="randomwalk"
+  <node name="randomwalk" pkg="mainbot" type="randomwalk"
         required="true" output="screen">
-       <param name="change_frequency_secs" value="1.0"/>
+       <param name="change_frequency_secs" value="2.0"/>
 
        <param name="forward_speed_min" value="-0.50"/>
        <param name="forward_speed_max" value="0.50"/>
