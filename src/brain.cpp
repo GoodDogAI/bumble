@@ -191,6 +191,31 @@ void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
     }
 }
 
+void write_intermediate_outputs(std_msgs::Float32MultiArray &yolo_intermediate, 
+                                const float* intermediateOut, nvinfer1::Dims intermediateDims) {   
+    yolo_intermediate.data = std::vector<float>(intermediateOut, intermediateOut + intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
+    yolo_intermediate.layout.data_offset = 0;
+    yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+    yolo_intermediate.layout.dim[0].label = "N";
+    yolo_intermediate.layout.dim[0].size = intermediateDims.d[0];
+    yolo_intermediate.layout.dim[0].stride = intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3];
+
+    yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+    yolo_intermediate.layout.dim[1].label = "C";
+    yolo_intermediate.layout.dim[1].size = intermediateDims.d[1];
+    yolo_intermediate.layout.dim[1].stride = intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3];
+
+    yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+    yolo_intermediate.layout.dim[2].label = "H";
+    yolo_intermediate.layout.dim[2].size = intermediateDims.d[2];
+    yolo_intermediate.layout.dim[2].stride = intermediateDims.d[2] * intermediateDims.d[3];
+
+    yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
+    yolo_intermediate.layout.dim[3].label = "W";
+    yolo_intermediate.layout.dim[3].size = intermediateDims.d[3];
+    yolo_intermediate.layout.dim[3].stride = intermediateDims.d[3];
+}
+
 /**
  * This code runs the YOLO backbone network, and then gets its drive commands from an MLP network that was trained offline.
  */
@@ -211,10 +236,12 @@ int main(int argc, char **argv)
   ros::NodeHandle nhPriv("~");
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
-  ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
   ros::Publisher feedback_pub = n.advertise<mainbot::HeadFeedback>("head_feedback", 5);
-  ros::Publisher yolo_intermediate_pub = n.advertise<std_msgs::Float32MultiArray>("yolo_intermediate", 2);
 
+  // Publishes intermedia debug messages for verifying proper operation. 
+  // Typically you would not enable this, because the bag recording will have trouble keeping up
+  ros::Publisher yolo_intermediate_pub = n.advertise<std_msgs::Float32MultiArray>("yolo_intermediate", 2);
+  ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
 
   ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command");
 
@@ -303,36 +330,18 @@ int main(int argc, char **argv)
         nvinfer1::Dims dims3 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME3));
         detectBBoxes(detectionOut3, dims3, yolo3);
         
-        //Draws the inference data back into a ROS Image message and publishes it
-        debug_img_pub.publish(cv_ptr->toImageMsg());
-
-        //Publish the intermediate yolo array
-        std_msgs::Float32MultiArray yolo_intermediate;
+        // Prepare the intermediate outputs to use later
         const float* intermediateOut = static_cast<const float*>(yoloBuffers.getHostBuffer(INTERMEDIATE_LAYER_BINDING_NAME));
         nvinfer1::Dims intermediateDims = mEngine->getBindingDimensions(mEngine->getBindingIndex(INTERMEDIATE_LAYER_BINDING_NAME));
-        yolo_intermediate.data = std::vector<float>(intermediateOut, intermediateOut + intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
-        yolo_intermediate.layout.data_offset = 0;
-        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
-        yolo_intermediate.layout.dim[0].label = "N";
-        yolo_intermediate.layout.dim[0].size = intermediateDims.d[0];
-        yolo_intermediate.layout.dim[0].stride = intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3];
 
-        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
-        yolo_intermediate.layout.dim[1].label = "C";
-        yolo_intermediate.layout.dim[1].size = intermediateDims.d[1];
-        yolo_intermediate.layout.dim[1].stride = intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3];
+        //Publish the intermediate yolo array if desired, caution this takes a lot of extra cpu saving the bags
+        if (nhPriv.param<bool>("log_network_outputs", false)) {
+            std_msgs::Float32MultiArray yolo_intermediate;
+            write_intermediate_outputs(yolo_intermediate, intermediateOut, intermediateDims);
+            yolo_intermediate_pub.publish(yolo_intermediate);
 
-        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
-        yolo_intermediate.layout.dim[2].label = "H";
-        yolo_intermediate.layout.dim[2].size = intermediateDims.d[2];
-        yolo_intermediate.layout.dim[2].stride = intermediateDims.d[2] * intermediateDims.d[3];
-
-        yolo_intermediate.layout.dim.push_back(std_msgs::MultiArrayDimension());
-        yolo_intermediate.layout.dim[3].label = "W";
-        yolo_intermediate.layout.dim[3].size = intermediateDims.d[3];
-        yolo_intermediate.layout.dim[3].stride = intermediateDims.d[3];
-
-        yolo_intermediate_pub.publish(yolo_intermediate);
+            debug_img_pub.publish(cv_ptr->toImageMsg());
+        }
 
         // Run the intermediate array through the SAC model
         float* mlpInputBuffer = static_cast<float*>(mlpBuffers.getHostBuffer(MLP_INPUT_BINDING_NAME));

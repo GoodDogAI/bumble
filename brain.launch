@@ -8,5 +8,7 @@
   <node name="brain" pkg="mainbot" type="brain" required="true" output="screen">
     <param name="tensorrt_yolo" value="/home/robot/yolov5s.tensorrt"/>
     <param name="tensorrt_brain" value="/home/robot/mlp.tensorrt"/>
+
+    <param name="log_network_outputs" value="false"/>
   </node>
 </launch>
