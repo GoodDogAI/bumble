@@ -1,0 +1,12 @@
+<launch>
+  <include file="$(find mainbot)/config/odrive.launch"/>
+  <include file="$(find mainbot)/config/pan_tilt_config.xml"/>
+  <include file="$(find mainbot)/config/pan_tilt_controller.launch"/>
+  <include file="$(find mainbot)/config/camera.launch"/>
+  <include file="$(find mainbot)/config/rosbag_capture.launch"/>
+
+  <node name="brain" pkg="mainbot" type="brain" required="true" output="screen">
+    <param name="tensorrt_yolo" value="/home/robot/yolov5s.tensorrt"/>
+    <param name="tensorrt_brain" value="/home/robot/mlp.tensorrt"/>
+  </node>
+</launch>

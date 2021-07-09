@@ -21,9 +21,6 @@
 #include <random>
 #include <math.h>
 
-#define TENSORRT_YOLO_PATH "/home/robot/yolov5s.tensorrt"
-#define TENSORRT_MLPSAC_PATH "/home/robot/mlp.tensorrt"
-
 #define INPUT_BINDING_NAME "images"
 #define OUTPUT_BINDING_NAME1 "output"
 #define OUTPUT_BINDING_NAME2 "427"
@@ -33,11 +30,7 @@
 #define MLP_INPUT_BINDING_NAME "yolo_intermediate"
 #define MLP_OUTPUT_BINDING_NAME "actions"
 
-#define MAX_SPEED 0.50
 #define OBJECT_DETECTION_THRESHOLD 0.60
-
-#define TILT_ID 10
-#define PAN_ID 11
 
 using namespace nvinfer1;
 
@@ -215,6 +208,7 @@ int main(int argc, char **argv)
    * NodeHandle destructed will close down the node.
    */
   ros::NodeHandle n;
+  ros::NodeHandle nhPriv("~");
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
   ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
@@ -233,7 +227,7 @@ int main(int argc, char **argv)
 
   //Load and print stats on the YOLO inference engine
   std::cout << "Creating YOLO Inference engine and execution context" << std::endl;
-  std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine(TENSORRT_YOLO_PATH, 0, std::cout);
+  std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine(nhPriv.param<std::string>("tensorrt_yolo", "yolo.tensorrt"), 0, std::cout);
   IExecutionContext *context = mEngine->createExecutionContext();
   std::cout << "Created" << std::endl;
 
@@ -244,7 +238,7 @@ int main(int argc, char **argv)
 
 
   std::cout << "Creating SAC MLP Inference engine and execution context" << std::endl;
-  std::shared_ptr<nvinfer1::ICudaEngine> mlpEngine = loadEngine(TENSORRT_MLPSAC_PATH, 0, std::cout);
+  std::shared_ptr<nvinfer1::ICudaEngine> mlpEngine = loadEngine(nhPriv.param<std::string>("tensorrt_brain", "mlpsac.tensorrt"), 0, std::cout);
   IExecutionContext *mlpContext = mlpEngine->createExecutionContext();
   std::cout << "Created" << std::endl;
 
@@ -375,13 +369,13 @@ int main(int argc, char **argv)
         cmd_vel_pub.publish(msg);
 
         dynamixel_workbench_msgs::DynamixelCommand panMsg;
-        panMsg.request.id = PAN_ID;
+        panMsg.request.id = n.param<int>("/pan_tilt/pan_id", 1);
         panMsg.request.addr_name = "Goal_Position";
         panMsg.request.value = mlpOutput[2];
         pan_tilt_client.call(panMsg);
 
         dynamixel_workbench_msgs::DynamixelCommand tiltMsg;
-        tiltMsg.request.id = TILT_ID;
+        tiltMsg.request.id = n.param<int>("/pan_tilt/tilt_id", 2);
         tiltMsg.request.addr_name = "Goal_Position";
         tiltMsg.request.value = mlpOutput[3];
         pan_tilt_client.call(tiltMsg);
