@@ -345,7 +345,14 @@ int main(int argc, char **argv)
 
         // Run the intermediate array through the SAC model
         float* mlpInputBuffer = static_cast<float*>(mlpBuffers.getHostBuffer(MLP_INPUT_BINDING_NAME));
-        memcpy(mlpInputBuffer, intermediateOut, intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
+       
+        //Copy the full intermediate layer over into the SAC model
+        //memcpy(mlpInputBuffer, intermediateOut, intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
+
+        //Copy every 151st element into the SAC model
+        for (int i = 0; i < 1018; i++) {
+            mlpInputBuffer[i] = intermediateOut[i * 151];
+        }
 
         cudaStream_t mlpStream;
         CHECK(cudaStreamCreate(&mlpStream));
@@ -369,30 +376,35 @@ int main(int argc, char **argv)
 
         const float* mlpOutput = static_cast<const float*>(mlpBuffers.getHostBuffer(MLP_OUTPUT_BINDING_NAME));
 
-        std::cout << "speed: " << mlpOutput[0] << "   ang: " << mlpOutput[1] << 
-                    "   pan: " << mlpOutput[2] << "   tilt: " << mlpOutput[3] << std::endl;
+        float speed = mlpOutput[0],
+              ang = mlpOutput[1],
+              pan = mlpOutput[2],
+              tilt = mlpOutput[3];
+
+        std::cout << "speed: " << speed << "   ang: " << ang << 
+                    "   pan: " << pan << "   tilt: " << tilt<< std::endl;
 
         geometry_msgs::Twist msg;
-        msg.linear.x = mlpOutput[0];
-        msg.angular.z = mlpOutput[1];
+        msg.linear.x = speed;
+        msg.angular.z = ang;
         cmd_vel_pub.publish(msg);
 
         dynamixel_workbench_msgs::DynamixelCommand panMsg;
         panMsg.request.id = n.param<int>("/pan_tilt/pan_id", 1);
         panMsg.request.addr_name = "Goal_Position";
-        panMsg.request.value = mlpOutput[2];
+        panMsg.request.value = pan;
         pan_tilt_client.call(panMsg);
 
         dynamixel_workbench_msgs::DynamixelCommand tiltMsg;
         tiltMsg.request.id = n.param<int>("/pan_tilt/tilt_id", 2);
         tiltMsg.request.addr_name = "Goal_Position";
-        tiltMsg.request.value = mlpOutput[3];
+        tiltMsg.request.value = tilt;
         pan_tilt_client.call(tiltMsg);
 
         // Publish the feedback command of the pan/tilt so we can log it, otherwise ROS service parameters are not logged
         mainbot::HeadFeedback feedback_msg;
-        feedback_msg.pan_command = mlpOutput[2];
-        feedback_msg.tilt_command = mlpOutput[3];
+        feedback_msg.pan_command = pan;
+        feedback_msg.tilt_command = tilt;
         feedback_msg.header.stamp = ros::Time::now();
         feedback_pub.publish(feedback_msg);
     }
