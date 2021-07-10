@@ -32,6 +32,8 @@
 
 #define OBJECT_DETECTION_THRESHOLD 0.60
 
+#define DEFAULT_STEPS_PER_DEGREE (1024/300.0)
+
 using namespace nvinfer1;
 
 cv_bridge::CvImagePtr cv_ptr;
@@ -216,6 +218,14 @@ void write_intermediate_outputs(std_msgs::Float32MultiArray &yolo_intermediate,
     yolo_intermediate.layout.dim[3].stride = intermediateDims.d[3];
 }
 
+float normalize_output(float val, float low, float high) {
+    return (val - low) * 2 / (high - low) - 1;
+}
+
+float output_from_normalized(float val_normalized, float low, float high) {
+    return (val_normalized + 1) * (high - low) / 2 + low;
+}
+
 /**
  * This code runs the YOLO backbone network, and then gets its drive commands from an MLP network that was trained offline.
  */
@@ -251,6 +261,11 @@ int main(int argc, char **argv)
 
   std::random_device rd;  //Will be used to obtain a seed for the random number engine
   std::mt19937 gen(rd());
+
+  float pan_min = n.param<float>("/pan_tilt/pan_min_angle", 0.0) * n.param<float>("/pan_tilt/pan_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
+  float pan_max = n.param<float>("/pan_tilt/pan_max_angle", 90.0) * n.param<float>("/pan_tilt/pan_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
+  float tilt_min = n.param<float>("/pan_tilt/tilt_min_angle", 0.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
+  float tilt_max = n.param<float>("/pan_tilt/tilt_max_angle", 90.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
 
   //Load and print stats on the YOLO inference engine
   std::cout << "Creating YOLO Inference engine and execution context" << std::endl;
@@ -381,6 +396,9 @@ int main(int argc, char **argv)
               pan = mlpOutput[2],
               tilt = mlpOutput[3];
 
+        pan = output_from_normalized(pan, pan_min, pan_max);
+        tilt = output_from_normalized(tilt, tilt_min, tilt_max);
+        
         std::cout << "speed: " << speed << "   ang: " << ang << 
                     "   pan: " << pan << "   tilt: " << tilt<< std::endl;
 
