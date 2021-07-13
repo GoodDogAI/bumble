@@ -12,6 +12,7 @@
 #include <boost/make_shared.hpp>
 #include <cv_bridge/cv_bridge.h>
 
+#include "NvOnnxParser.h"
 #include "NvInfer.h"
 #include "tensorrt_common/buffers.h"
 
@@ -63,12 +64,12 @@ class Logger : public ILogger
      }
  } gLogger;
 
-std::shared_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& engine, int DLACore, std::ostream& err)
+std::shared_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& engine_path)
 {
-    std::ifstream engineFile(engine, std::ios::binary);
+    std::ifstream engineFile(engine_path, std::ios::binary);
     if (!engineFile)
     {
-        err << "Error opening engine file: " << engine << std::endl;
+        ROS_ERROR("Error opening engine file: %s", engine_path.c_str());
         return nullptr;
     }
 
@@ -80,18 +81,94 @@ std::shared_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& engine, int
     engineFile.read(engineData.data(), fsize);
     if (!engineFile)
     {
-        err << "Error loading engine file: " << engine << std::endl;
+        ROS_ERROR("Error loading engine file: %s", engine_path.c_str());
         return nullptr;
     }
 
-    TrtUniquePtr<IRuntime> runtime{createInferRuntime(gLogger)};
-    if (DLACore != -1)
-    {
-        runtime->setDLACore(DLACore);
-    }
+    TrtUniquePtr<nvinfer1::IRuntime> runtime{createInferRuntime(gLogger)};
+
+    // Not using DLACores in our inference scenarios
+    // if (DLACore != -1)
+    // {
+    //     runtime->setDLACore(DLACore);
+    // }
 
     return std::shared_ptr<nvinfer1::ICudaEngine>(runtime->deserializeCudaEngine(engineData.data(), fsize, nullptr),
                                                   samplesCommon::InferDeleter());
+}
+
+std::shared_ptr<nvinfer1::ICudaEngine> buildAndCacheEngine(const std::string& onnx_path) {
+    auto builder = TrtUniquePtr<nvinfer1::IBuilder>(nvinfer1::createInferBuilder(gLogger));
+    if (!builder)
+    {
+        ROS_ERROR("Failed to create TensorRT builder");
+        return nullptr;
+    }
+
+    const auto explicitBatch = 1U << static_cast<uint32_t>(NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+    auto network = TrtUniquePtr<nvinfer1::INetworkDefinition>(builder->createNetworkV2(explicitBatch));
+    if (!network)
+    {
+        ROS_ERROR("Failed to create TensorRT network");
+        return nullptr;
+    }
+
+    auto config = TrtUniquePtr<nvinfer1::IBuilderConfig>(builder->createBuilderConfig());
+    if (!config)
+    {
+        ROS_ERROR("Failed to create TensorRT builder config");
+        return nullptr;
+    }
+
+    auto parser = TrtUniquePtr<nvonnxparser::IParser>(nvonnxparser::createParser(*network, gLogger));
+    if (!parser)
+    {
+        ROS_ERROR("Failed to create TensorRT ONNX parser");
+        return nullptr;
+    }
+
+    auto parsed = parser->parseFromFile(onnx_path.c_str(), static_cast<int>(sample::gLogger.getReportableSeverity()));
+    if (!parsed)
+    {
+        ROS_ERROR("Failed to parse ONNX network %s", onnx_path.c_str());
+        return nullptr;
+    }
+
+    config->setMaxWorkspaceSize(16_MiB);
+
+    // CUDA stream used for profiling by the builder.
+    cudaStream_t profileStream;
+    CHECK(cudaStreamCreate(&profileStream));
+    config->setProfileStream(profileStream);
+
+    std::shared_ptr<nvinfer1::ICudaEngine> engine(builder->buildEngineWithConfig(*network, *config),
+                                                  samplesCommon::InferDeleter());
+    if (!engine)
+    {
+        ROS_ERROR("Failed to build TensorRT engine from config");
+        return nullptr;
+    }
+
+    auto serialized = TrtUniquePtr<nvinfer1::IHostMemory>(engine->serialize());
+    if (!serialized)
+    {
+        ROS_ERROR("Failed to serialize TensorRT engine");
+        return nullptr;
+    }
+
+    // Save serialized engine to disk.
+    std::ofstream engineFile(onnx_path + ".engine", std::ios::binary);
+    if (!engineFile)
+    {
+        ROS_ERROR("Failed to open engine file %s", onnx_path.c_str());
+        return nullptr;
+    }
+    engineFile.write(reinterpret_cast<char*>(serialized->data()), serialized->size());
+    engineFile.close();
+
+    cudaStreamDestroy(profileStream);
+
+    return engine;
 }
 
 static constexpr int INPUT_H = 480;
@@ -136,7 +213,7 @@ std::vector<std::string> yolo_class_names = {
 void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
 {
   ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
-  img->encoding.c_str(), img->width, img->height);
+            img->encoding.c_str(), img->width, img->height);
 
   cv_ptr = cv_bridge::toCvCopy(img, "rgb8");
   last_image_received = ros::Time::now();
@@ -267,11 +344,24 @@ int main(int argc, char **argv)
   float tilt_min = n.param<float>("/pan_tilt/tilt_min_angle", 0.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
   float tilt_max = n.param<float>("/pan_tilt/tilt_max_angle", 90.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
 
+  // Build the inference engine if it doesn't exist yet
+  std::string yolo_model_path = nhPriv.param<std::string>("tensorrt_yolo", "yolo.onnx");
+  std::string brain_model_path = nhPriv.param<std::string>("tensorrt_brain", "mlpsac.onnx");
+
   //Load and print stats on the YOLO inference engine
   std::cout << "Creating YOLO Inference engine and execution context" << std::endl;
-  std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine(nhPriv.param<std::string>("tensorrt_yolo", "yolo.tensorrt"), 0, std::cout);
+  std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine(yolo_model_path + ".engine");
+
+  if (mEngine == nullptr) {
+    mEngine = buildAndCacheEngine(yolo_model_path);
+
+    if (mEngine == nullptr) {
+      std::cout << "Error loading YOLO engine" << std::endl;
+      return 1;
+    }
+  }
+
   IExecutionContext *context = mEngine->createExecutionContext();
-  std::cout << "Created" << std::endl;
 
   for (int ib = 0; ib < mEngine->getNbBindings(); ib++) {
    std::cout << "YOLO " << mEngine->getBindingName(ib) << " isInput: " << mEngine->bindingIsInput(ib) 
@@ -280,9 +370,20 @@ int main(int argc, char **argv)
 
 
   std::cout << "Creating SAC MLP Inference engine and execution context" << std::endl;
-  std::shared_ptr<nvinfer1::ICudaEngine> mlpEngine = loadEngine(nhPriv.param<std::string>("tensorrt_brain", "mlpsac.tensorrt"), 0, std::cout);
+  std::shared_ptr<nvinfer1::ICudaEngine> mlpEngine = loadEngine(brain_model_path + ".engine");
+
+  if (mlpEngine == nullptr) {
+    mlpEngine = buildAndCacheEngine(brain_model_path);
+
+    if (mlpEngine == nullptr) {
+      std::cout << "Error loading SAC MLP engine" << std::endl;
+      return 1;
+    }
+  }
+
+
+
   IExecutionContext *mlpContext = mlpEngine->createExecutionContext();
-  std::cout << "Created" << std::endl;
 
   for (int ib = 0; ib < mlpEngine->getNbBindings(); ib++) {
    std::cout << "MLPSAC " << mlpEngine->getBindingName(ib) << " isInput: " << mlpEngine->bindingIsInput(ib) 

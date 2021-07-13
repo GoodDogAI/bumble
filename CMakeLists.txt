@@ -179,6 +179,7 @@ target_link_libraries(brain
   ${CUBLAS_LIB}
   ${CUDNN_LIB}
   nvinfer
+  nvonnxparser
   ${RT_LIB}
   ${CMAKE_DL_LIBS}
   ${CMAKE_THREAD_LIBS_INIT}
