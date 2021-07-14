@@ -1,4 +1,9 @@
 <launch>
+    <!-- Leave the laser dot pattern projector disabled -->
+    <rosparam>
+        /camera/stereo_module/emitter_enabled: 0
+    </rosparam>
+
     <include file="$(find realsense2_camera)/launch/rs_camera.launch">
         <arg name="enable_color" value="false"/>
         <arg name="enable_depth" value="false"/>
