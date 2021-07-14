@@ -210,15 +210,6 @@ std::vector<std::string> yolo_class_names = {
 };
 
 
-void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
-{
-  ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
-            img->encoding.c_str(), img->width, img->height);
-
-  cv_ptr = cv_bridge::toCvCopy(img, "rgb8");
-  last_image_received = ros::Time::now();
-}
-
 void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
     //NCHW format
     for (int c = 0; c < CHECK_COUNT; c++) {
@@ -303,6 +294,18 @@ float output_from_normalized(float val_normalized, float low, float high) {
     return (val_normalized + 1) * (high - low) / 2 + low;
 }
 
+ 
+// Called when a new camera message is received.
+// Moves the image into an easy to work with OpenCV format.
+void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
+{
+  ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
+            img->encoding.c_str(), img->width, img->height);
+
+  cv_ptr = cv_bridge::toCvCopy(img, "rgb8");
+  last_image_received = ros::Time::now();
+}
+
 /**
  * This code runs the YOLO backbone network, and then gets its drive commands from an MLP network that was trained offline.
  */
@@ -381,8 +384,6 @@ int main(int argc, char **argv)
     }
   }
 
-
-
   IExecutionContext *mlpContext = mlpEngine->createExecutionContext();
 
   for (int ib = 0; ib < mlpEngine->getNbBindings(); ib++) {
@@ -395,10 +396,10 @@ int main(int argc, char **argv)
 
   while (ros::ok())
   {
-    ros::Time start = ros::Time::now();
-
     // Skip the image processing step if there is no image
     if (cv_ptr) {
+        ros::Time start = ros::Time::now();
+
         float* hostInputBuffer = static_cast<float*>(yoloBuffers.getHostBuffer(INPUT_BINDING_NAME));
 
         //NCHW format is offset_nchw(n, c, h, w) = n * CHW + c * HW + h * W + w
@@ -526,10 +527,16 @@ int main(int argc, char **argv)
         feedback_msg.tilt_command = tilt;
         feedback_msg.header.stamp = ros::Time::now();
         feedback_pub.publish(feedback_msg);
+
+        // Clear out the image pointer, so we don't reprocess this image anymore
+        cv_ptr = nullptr;
+        std::cout << "Took " << ros::Time::now() - start << std::endl;          
+    }
+    else if (last_image_received > ros::Time(0) && ros::Time::now() - last_image_received > ros::Duration(1.0)) {
+        ROS_ERROR("No image received in the last second, exiting");
+        ros::shutdown();
     }
               
-    std::cout << "Took " << ros::Time::now() - start << std::endl;      
-
     ros::spinOnce();
     loop_rate.sleep();
   }
