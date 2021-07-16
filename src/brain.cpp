@@ -16,6 +16,8 @@
 #include "NvInfer.h"
 #include "tensorrt_common/buffers.h"
 
+#include <algorithm>
+
 #include <iostream>
 
 #include <fstream>
@@ -30,10 +32,20 @@
 
 #define MLP_INPUT_BINDING_NAME "yolo_intermediate"
 #define MLP_OUTPUT_BINDING_NAME "actions"
+#define ACTIONS_STDDEV_BINDING_NAME "stddev"
 
 #define OBJECT_DETECTION_THRESHOLD 0.60
 
 #define DEFAULT_STEPS_PER_DEGREE (1024/300.0)
+
+const float SPEED_MIN = -0.5;
+const float SPEED_MAX = 0.5;
+const float ROTATION_MIN = -0.5;
+const float ROTATION_MAX = 0.5;
+const float PAN_MIN = -1;
+const float PAN_MAX = 1;
+const float TILT_MIN = -1;
+const float TILT_MAX = 1;
 
 using namespace nvinfer1;
 
@@ -198,6 +210,8 @@ static constexpr YoloKernel yolo3 = {
     INPUT_H / 8,
     {10,13,  16,30,  33,23}
 };
+
+std::normal_distribution<float> normal_dist(0.0, 1.0);
 
 std::vector<std::string> yolo_class_names = {
   "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign",
@@ -498,11 +512,18 @@ int main(int argc, char **argv)
               pan = mlpOutput[2],
               tilt = mlpOutput[3];
 
+        const float* actionsStdDev = static_cast<const float*>(mlpBuffers.getHostBuffer(ACTIONS_STDDEV_BINDING_NAME));
+        speed = std::clamp(speed + normal_dist(gen) * actionsStdDev[0], SPEED_MIN, SPEED_MAX);
+        ang = std::clamp(ang + normal_dist(gen) * actionsStdDev[1], ROTATION_MIN, ROTATION_MAX);
+        pan = std::clamp(pan + normal_dist(gen) * actionsStdDev[2], PAN_MIN, PAN_MAX);
+        tilt = std::clamp(tilt + normal_dist(gen) * actionsStdDev[3], TILT_MIN, TILT_MAX);
+
         pan = output_from_normalized(pan, pan_min, pan_max);
         tilt = output_from_normalized(tilt, tilt_min, tilt_max);
         
         std::cout << "speed: " << speed << "   ang: " << ang << 
-                    "   pan: " << pan << "   tilt: " << tilt<< std::endl;
+                    "   pan: " << pan << "   tilt: " << tilt<<
+                    "     stddevs: "  << actionsStdDev[0] << " " << actionsStdDev[1] << " " << actionsStdDev[2] << " " << actionsStdDev[3] <<  std::endl;
 
         geometry_msgs::Twist msg;
         msg.linear.x = speed;
