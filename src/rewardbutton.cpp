@@ -1,11 +1,10 @@
 #include "ros/ros.h"
-#include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
+
 
 #include <iostream>
 #include <fstream>
-#include <random>
-#include <math.h>
+
 
 
 /**
@@ -24,8 +23,15 @@ int main(int argc, char **argv)
   
   ros::Rate loop_rate(2);
 
+  // Open a file description to the input device
+  std::ifstream inputFile;
+  inputFile.open(nhPriv.param<std::string>("device", "/dev/input/event0"));
+  if (!inputFile)
+  {
+      ROS_ERROR("Could not open input file");
+      return 1;
+  }
 
-    
  
   while (ros::ok())
   {

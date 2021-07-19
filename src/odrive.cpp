@@ -57,7 +57,14 @@ int send_int_command(int fd, const std::string& command) {
     return -1;
   }
 
-  return std::stoi(read_string(fd));
+  std::string response = read_string(fd);
+
+  if (response == "unknown") {
+    ROS_WARN("Received 'unknown' response to %s", command.c_str());
+    return -1;
+  }
+
+  return std::stoi(response);
 }
 
 float send_float_command(int fd, const std::string& command) {
@@ -68,7 +75,14 @@ float send_float_command(int fd, const std::string& command) {
     return NAN;
   }
 
-  return std::stof(read_string(fd));
+  std::string response = read_string(fd);
+
+  if (response == "unknown") {
+    ROS_WARN("Received 'unknown' response to %s", command.c_str());
+    return NAN;
+  }
+
+  return std::stof(response);
 }
 
 
