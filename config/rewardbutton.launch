@@ -1,0 +1,5 @@
+<launch>
+  <node name="rewardbutton" pkg="mainbot" type="rewardbutton" required="true" output="screen">
+    <param name="device" value="/dev/input/event6"/>
+  </node>
+</launch>
