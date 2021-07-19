@@ -1,5 +1,7 @@
 <launch>
   <node name="rewardbutton" pkg="mainbot" type="rewardbutton" required="true" output="screen">
     <param name="device" value="/dev/input/event6"/>
+    <param name="penalty_keycode" value="115" />
+    <param name="penalty_duration_secs" value="2"/>
   </node>
 </launch>
