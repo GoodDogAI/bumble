@@ -204,9 +204,11 @@ int main(int argc, char **argv)
     // Read and publish the vbus main voltage
     float vbus_voltage = send_float_command(serial_port, "r vbus_voltage\n");
 
-    std_msgs::Float32 vbus_msg;
-    vbus_msg.data = vbus_voltage;
-    vbus_pub.publish(vbus_msg);
+    if (!std::isnan(vbus_voltage)) {
+      std_msgs::Float32 vbus_msg;
+      vbus_msg.data = vbus_voltage;
+      vbus_pub.publish(vbus_msg);
+    }
 
     // Read and publish the motor feedback values
     mainbot::ODriveFeedback feedback_msg;
