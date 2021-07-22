@@ -373,6 +373,8 @@ int main(int argc, char **argv)
   float tilt_min = n.param<float>("/pan_tilt/tilt_min_angle", 0.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
   float tilt_max = n.param<float>("/pan_tilt/tilt_max_angle", 90.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
 
+  float sampling_scale = nhPriv.param<float>("sampling_scale", 1.0f);
+
   // Build the inference engine if it doesn't exist yet
   std::string yolo_model_path = nhPriv.param<std::string>("tensorrt_yolo", "yolo.onnx");
   std::string brain_model_path = nhPriv.param<std::string>("tensorrt_brain", "mlpsac.onnx");
@@ -525,10 +527,10 @@ int main(int argc, char **argv)
               tilt = mlpOutput[3];
 
         const float* actionsStdDev = static_cast<const float*>(mlpBuffers.getHostBuffer(ACTIONS_STDDEV_BINDING_NAME));
-        speed = std::clamp(speed + normal_dist(gen) * actionsStdDev[0], SPEED_MIN, SPEED_MAX);
-        ang = std::clamp(ang + normal_dist(gen) * actionsStdDev[1], ROTATION_MIN, ROTATION_MAX);
-        pan = std::clamp(pan + normal_dist(gen) * actionsStdDev[2], PAN_MIN, PAN_MAX);
-        tilt = std::clamp(tilt + normal_dist(gen) * actionsStdDev[3], TILT_MIN, TILT_MAX);
+        speed = std::clamp(speed + normal_dist(gen) * actionsStdDev[0] * sampling_scale, SPEED_MIN, SPEED_MAX);
+        ang = std::clamp(ang + normal_dist(gen) * actionsStdDev[1] * sampling_scale, ROTATION_MIN, ROTATION_MAX);
+        pan = std::clamp(pan + normal_dist(gen) * actionsStdDev[2] * sampling_scale, PAN_MIN, PAN_MAX);
+        tilt = std::clamp(tilt + normal_dist(gen) * actionsStdDev[3] * sampling_scale, TILT_MIN, TILT_MAX);
 
         pan = output_from_normalized(pan, pan_min, pan_max);
         tilt = output_from_normalized(tilt, tilt_min, tilt_max);
