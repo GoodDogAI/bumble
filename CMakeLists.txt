@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(mainbot)
 
-## Compile as C++11, supported in ROS Kinetic and newer
-add_compile_options(-std=c++14)
+## Compile as C++17, supported in ROS Kinetic and newer
+add_compile_options(-std=c++17)
 
 set(CUDA_INSTALL_DIR /usr/local/cuda)
 

@@ -4,8 +4,20 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <linux/input.h>
 #include <sys/poll.h>
+
+#include <vector>
+
+#define DEV_INPUT_EVENT "/dev/input"
+#define EVENT_DEV_NAME "event"
+
+
+static int is_event_device(const struct dirent *dir) {
+	return strncmp(EVENT_DEV_NAME, dir->d_name, 5) == 0;
+}
+
 
 /**
  * This code listens to a bluetooth device such as a fob, or camera shutter, and 
@@ -23,16 +35,40 @@ int main(int argc, char **argv)
   
   ros::Rate loop_rate(2);
 
-  // Open a file description to the input device
-  std::string dev_name = nhPriv.param<std::string>("device", "/dev/input/event0"); 
-  int fd = open(dev_name.c_str(), O_RDONLY);
-  if (fd < 0)
-  {
-      ROS_ERROR("Could not open input file error %d", fd);
-      return 1;
-  }
+  // Container for all the input devices fds that we are watching
+  std::vector<pollfd> input_fds;
 
-  ROS_INFO("Opened event input file %s", dev_name.c_str());
+  // Iterate over all files in /dev/input/event*, using code from evtest
+  struct dirent **namelist;
+	int i, ndev, devnum, match;
+	char *filename;
+
+	ndev = scandir(DEV_INPUT_EVENT, &namelist, is_event_device, alphasort);
+
+  ROS_INFO("Available input devices: ");
+
+	for (i = 0; i < ndev; i++)
+	{
+		char fname[4096];
+		int fd = -1;
+		char name[256] = "???";
+
+    snprintf(fname, sizeof(fname), "%s/%s", DEV_INPUT_EVENT, namelist[i]->d_name);
+		
+		fd = open(fname, O_RDONLY);
+		if (fd < 0) {
+      ROS_WARN("Failed to open %s", fname);
+      continue;
+    }
+    
+		ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+
+    ROS_INFO("%s:  %s", fname, name);
+		input_fds.push_back({fd, POLLIN, 0});
+
+		free(namelist[i]);
+	}
+
   
   // Ros Params for settings rewards/penalties
   int penalty_keycode = nhPriv.param<int>("penalty_keycode", KEY_ESC);
@@ -42,25 +78,23 @@ int main(int argc, char **argv)
   // Buffers for reading keyboard IO
   struct input_event ev[16];
 
-  // Poll over open file descriptors
-  struct pollfd fds[1];
-  fds[0].fd = fd;
-  fds[0].events = POLLIN;
 
   while (ros::ok())
   {
-    int ret = poll(fds, sizeof(fds), 0);
+    int ret = poll(input_fds.data(), input_fds.size(), 0);
 
-    if (fds[0].revents & POLLIN) {
-      // Read keycodes from the input file
-      int rd = read(fd, ev, sizeof(ev) * sizeof(input_event));
+    for (int i = 0; i < input_fds.size(); i++) {
+      if (input_fds[i].revents & POLLIN) {
+        // Read keycodes from the input file
+        int rd = read(input_fds[i].fd, ev, sizeof(ev) * sizeof(input_event));
 
-      for (int i = 0; i < rd / sizeof(input_event); i++) {
-        // ROS_INFO("keycode %d %d %d", ev[i].type, ev[i].code, ev[i].value);
+        for (int i = 0; i < rd / sizeof(input_event); i++) {
+          // ROS_INFO("keycode %d %d %d", ev[i].type, ev[i].code, ev[i].value);
 
-        if (ev[i].type == EV_KEY && ev[i].code == penalty_keycode && ev[i].value == 1) {
-          ROS_INFO("Penalty keycode detected");
-          last_penalty = ros::Time::now();
+          if (ev[i].type == EV_KEY && ev[i].code == penalty_keycode && ev[i].value == 1) {
+            ROS_INFO("Penalty keycode detected");
+            last_penalty = ros::Time::now();
+          }
         }
       }
     }
