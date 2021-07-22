@@ -3,6 +3,7 @@
 #include "std_msgs/String.h"
 #include "std_msgs/MultiArrayLayout.h"
 #include "std_msgs/MultiArrayDimension.h"
+#include "std_msgs/Float32.h"
 #include "std_msgs/Float32MultiArray.h"
 #include "sensor_msgs/Image.h"
 #include "geometry_msgs/Twist.h"
@@ -51,6 +52,7 @@ using namespace nvinfer1;
 
 cv_bridge::CvImagePtr cv_ptr;
 ros::Time last_image_received;
+float external_reward = 0.0f;
 
 inline float Logist(float data){ return 1.0f / (1.0f + expf(-data)); };
 
@@ -320,6 +322,15 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
   last_image_received = ros::Time::now();
 }
 
+// Called when you receive a reward message from an external controller
+void rewardButtonCallback(const std_msgs::Float32& rew)
+{
+  if (rew.data != external_reward)
+    ROS_INFO("Received reward button message: %f", rew.data);
+
+  external_reward = rew.data;
+}
+
 /**
  * This code runs the YOLO backbone network, and then gets its drive commands from an MLP network that was trained offline.
  */
@@ -349,7 +360,8 @@ int main(int argc, char **argv)
 
   ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command");
 
-  ros::Subscriber sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
+  ros::Subscriber camera_sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
+  ros::Subscriber reward_sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
 
   ros::Rate loop_rate(20);
 
@@ -524,6 +536,14 @@ int main(int argc, char **argv)
         std::cout << "speed: " << speed << "   ang: " << ang << 
                     "   pan: " << pan << "   tilt: " << tilt<<
                     "     stddevs: "  << actionsStdDev[0] << " " << actionsStdDev[1] << " " << actionsStdDev[2] << " " << actionsStdDev[3] <<  std::endl;
+
+        if (external_reward < 0.0f) {
+            speed = 0.0f;
+            ang = 0.0f;
+
+            pan = (pan_min + pan_max) / 2;
+            tilt = (tilt_min + tilt_max) / 2;
+        }
 
         geometry_msgs::Twist msg;
         msg.linear.x = speed;
