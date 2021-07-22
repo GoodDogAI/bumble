@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <linux/input.h>
+#include <sys/inotify.h>
 #include <sys/poll.h>
 
 #include <vector>
@@ -32,8 +33,12 @@ int main(int argc, char **argv)
   ros::NodeHandle nhPriv("~");
 
   ros::Publisher reward_pub = n.advertise<std_msgs::Float32>("reward_button", 2);
-  
   ros::Rate loop_rate(2);
+
+  // Ros Params for settings rewards/penalties
+  int penalty_keycode = nhPriv.param<int>("penalty_keycode", KEY_ESC);
+  ros::Duration penalty_duration = ros::Duration(nhPriv.param<float>("penalty_duration_secs", 1.0));
+  ros::Time last_penalty;
 
   // Container for all the input devices fds that we are watching
   std::vector<pollfd> input_fds;
@@ -60,7 +65,7 @@ int main(int argc, char **argv)
       ROS_WARN("Failed to open %s", fname);
       continue;
     }
-    
+
 		ioctl(fd, EVIOCGNAME(sizeof(name)), name);
 
     ROS_INFO("%s:  %s", fname, name);
@@ -69,18 +74,31 @@ int main(int argc, char **argv)
 		free(namelist[i]);
 	}
 
+
+  // Set up an inotify watch on the /dev/input/event* directory
+  int inotify_fd = inotify_init();
+  if (inotify_fd < 0) {
+    ROS_ERROR("Failed to initialize inotify");
+    return -1;
+  }
+
+  // Set inotify to be non-blocking
+  fcntl(inotify_fd, F_SETFL, fcntl(inotify_fd, F_GETFL) | O_NONBLOCK);
+
+  int watch_fd = inotify_add_watch(inotify_fd, DEV_INPUT_EVENT, IN_CREATE);
   
-  // Ros Params for settings rewards/penalties
-  int penalty_keycode = nhPriv.param<int>("penalty_keycode", KEY_ESC);
-  ros::Duration penalty_duration = ros::Duration(nhPriv.param<float>("penalty_duration_secs", 1.0));
-  ros::Time last_penalty;
+  if (watch_fd < 0) {
+    ROS_ERROR("Failed to watch %s", DEV_INPUT_EVENT);
+    return -1;
+  }
 
-  // Buffers for reading keyboard IO
+  // Buffers for reading keyboard IO and inotify events
   struct input_event ev[16];
-
+  char inots[4096] __attribute__ ((aligned(8)));
 
   while (ros::ok())
   {
+    // Read any new keyboard events
     int ret = poll(input_fds.data(), input_fds.size(), 0);
 
     for (int i = 0; i < input_fds.size(); i++) {
@@ -96,6 +114,32 @@ int main(int argc, char **argv)
             last_penalty = ros::Time::now();
           }
         }
+      }
+    }
+
+    // Check if any new input devices have been added
+    ret = read(inotify_fd, inots, sizeof(inots) * sizeof(char));
+
+    if (ret > 0)
+    {
+      for (char *p = inots; p < inots + ret;)
+      {
+        struct inotify_event *event = (struct inotify_event *)p;
+        ROS_INFO("Saw new device - %s", event->name);
+
+        char fname[4096];
+        snprintf(fname, sizeof(fname), "%s/%s", DEV_INPUT_EVENT, event->name);
+
+        int fd = open(fname, O_RDONLY);
+
+        if (fd < 0) {
+          ROS_ERROR("Failed to open %s", fname);
+          return -1;
+        }
+
+        input_fds.push_back({fd, POLLIN, 0});
+
+        p += sizeof(struct inotify_event) + event->len;
       }
     }
 
