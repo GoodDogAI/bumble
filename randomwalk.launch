@@ -1,12 +1,12 @@
 <launch>
-<!--<include file="$(find mainbot)/config/odrive.launch"/>
+  <include file="$(find mainbot)/config/odrive.launch"/>
   <include file="$(find mainbot)/config/pan_tilt_config.xml"/>
   <include file="$(find mainbot)/config/pan_tilt_controller.launch"/>
-  <include file="$(find mainbot)/config/camera.launch"/> -->
+  <include file="$(find mainbot)/config/camera.launch"/>
 
   <include file="$(find mainbot)/config/rewardbutton.launch"/>
 
-  <!-- <include file="$(find mainbot)/config/rosbag_capture.launch">
+  <include file="$(find mainbot)/config/rosbag_capture.launch">
     <arg name="prefix" value="randomwalk"/>
   </include>
 
@@ -19,5 +19,5 @@
 
        <param name="angular_speed_min" value="-0.50"/>
        <param name="angular_speed_max" value="0.50"/>
-  </node> -->
+  </node>
 </launch>
