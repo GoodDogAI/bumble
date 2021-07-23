@@ -363,7 +363,7 @@ int main(int argc, char **argv)
   ros::Subscriber camera_sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
   ros::Subscriber reward_sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
 
-  ros::Rate loop_rate(20);
+  ros::Rate loop_rate(nhPriv.param<float>("update_rate", 8.0f));
 
   std::random_device rd;  //Will be used to obtain a seed for the random number engine
   std::mt19937 gen(rd());

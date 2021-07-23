@@ -17,6 +17,11 @@
 
     <!-- Set to 0.0 to disable sampling and use mean actions, set to 1.0 to sample actions using predicted standard deviations -->
     <param name="sampling_scale" value="1.0"/>
+
+    <!-- Set to how fast you'd like the update loop to run, in Hz -->
+    <param name="update_rate" value="2.0"/>
+
+    <!-- Set to true to output intermediate yolo outputs as ROS messages -->
     <param name="log_network_outputs" value="false"/>
   </node>
 </launch>
