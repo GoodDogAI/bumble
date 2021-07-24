@@ -8,6 +8,7 @@
 #include "sensor_msgs/Image.h"
 #include "geometry_msgs/Twist.h"
 #include "dynamixel_workbench_msgs/DynamixelCommand.h"
+#include "dynamixel_workbench_msgs/DynamixelStateList.h"
 #include "mainbot/HeadFeedback.h"
 
 #include <boost/make_shared.hpp>
@@ -53,6 +54,7 @@ using namespace nvinfer1;
 cv_bridge::CvImagePtr cv_ptr;
 ros::Time last_image_received;
 float external_reward = 0.0f;
+dynamixel_workbench_msgs::DynamixelStateList last_dynamixel_msg;
 
 inline float Logist(float data){ return 1.0f / (1.0f + expf(-data)); };
 
@@ -331,6 +333,16 @@ void rewardButtonCallback(const std_msgs::Float32& rew)
   external_reward = rew.data;
 }
 
+// Called when you receive a dynamixel current state message
+void dynamixelStateCallback(const dynamixel_workbench_msgs::DynamixelStateList& msg)
+{
+    assert(msg.dynamixel_state.size() == 2);
+    assert(msg.dynamixel_state[0].name == "pan");
+    assert(msg.dynamixel_state[1].name == "tilt");
+
+    last_dynamixel_msg = msg;
+}
+
 /**
  * This code runs the YOLO backbone network, and then gets its drive commands from an MLP network that was trained offline.
  */
@@ -362,6 +374,7 @@ int main(int argc, char **argv)
 
   ros::Subscriber camera_sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
   ros::Subscriber reward_sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
+  ros::Subscriber dynamixel_state_sub = n.subscribe("/dynamixel_workbench/dynamixel_state", 1, dynamixelStateCallback);
 
   ros::Rate loop_rate(nhPriv.param<float>("update_rate", 8.0f));
 
@@ -499,8 +512,8 @@ int main(int argc, char **argv)
 
         // Set the input observation space
         // Normalized pan and tilt, current orientation
-        mlpInputBuffer[0] = 0.0f;
-        mlpInputBuffer[1] = 0.0f;
+        mlpInputBuffer[0] = normalize_output(last_dynamixel_msg.dynamixel_state[0].present_position, pan_min, pan_max);
+        mlpInputBuffer[1] = normalize_output(last_dynamixel_msg.dynamixel_state[1].present_position, tilt_min, tilt_max);
 
         // Head gyro
         mlpInputBuffer[2] = 0.0f;
