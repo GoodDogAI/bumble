@@ -11,6 +11,7 @@
 #include "dynamixel_workbench_msgs/DynamixelCommand.h"
 #include "dynamixel_workbench_msgs/DynamixelStateList.h"
 #include "mainbot/HeadFeedback.h"
+#include "mainbot/ODriveFeedback.h"
 
 #include <boost/make_shared.hpp>
 #include <cv_bridge/cv_bridge.h>
@@ -57,6 +58,8 @@ ros::Time last_image_received;
 float external_reward = 0.0f;
 dynamixel_workbench_msgs::DynamixelStateList last_dynamixel_msg;
 sensor_msgs::Imu last_head_orientation;
+mainbot::ODriveFeedback last_odrive_feedback;
+float last_vbus = 27.0f;
 
 inline float Logist(float data){ return 1.0f / (1.0f + expf(-data)); };
 
@@ -361,6 +364,18 @@ void gyroCallback(const sensor_msgs::Imu& msg)
     last_head_orientation.angular_velocity.z = msg.angular_velocity.z;
 }
 
+// Called you when receive informatiom about the current state of the motors via the Odrive interface
+void oDriveCallback(const mainbot::ODriveFeedback& msg)
+{
+    last_odrive_feedback = msg;
+}
+
+// Called when you get a vbus reading
+void vbusCallback(const std_msgs::Float32& msg) 
+{
+    last_vbus = msg.data;
+}
+
 /**
  * This code runs the YOLO backbone network, and then gets its drive commands from an MLP network that was trained offline.
  */
@@ -395,6 +410,8 @@ int main(int argc, char **argv)
   ros::Subscriber dynamixel_state_sub = n.subscribe("/dynamixel_workbench/dynamixel_state", 1, dynamixelStateCallback);
   ros::Subscriber accel_sub = n.subscribe("/camera/accel/sample", 1, accelCallback);
   ros::Subscriber gyro_sub = n.subscribe("/camera/gyro/sample", 1, gyroCallback);
+  ros::Subscriber odrive_feedback_sub = n.subscribe("/odrive_feedback", 1, oDriveCallback);
+  ros::Subscriber vbus_sub = n.subscribe("/vbus", 1, vbusCallback);
 
   ros::Rate loop_rate(nhPriv.param<float>("update_rate", 8.0f));
 
@@ -546,11 +563,11 @@ int main(int argc, char **argv)
         mlpInputBuffer[7] = last_head_orientation.linear_acceleration.z;
 
         // ODrive feedback
-        mlpInputBuffer[8] = 0.0f;
-        mlpInputBuffer[9] = 0.0f;
+        mlpInputBuffer[8] = last_odrive_feedback.motor_vel_actual_0;
+        mlpInputBuffer[9] = last_odrive_feedback.motor_vel_actual_1;
 
         // Vbus
-        mlpInputBuffer[10] = 27.0f;
+        mlpInputBuffer[10] = last_vbus;
     
         //Copy every 157st element into the SAC model
         for (int i = 0; i < 979; i++) {
