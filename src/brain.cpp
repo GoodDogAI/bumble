@@ -6,6 +6,7 @@
 #include "std_msgs/Float32.h"
 #include "std_msgs/Float32MultiArray.h"
 #include "sensor_msgs/Image.h"
+#include "sensor_msgs/Imu.h"
 #include "geometry_msgs/Twist.h"
 #include "dynamixel_workbench_msgs/DynamixelCommand.h"
 #include "dynamixel_workbench_msgs/DynamixelStateList.h"
@@ -55,6 +56,7 @@ cv_bridge::CvImagePtr cv_ptr;
 ros::Time last_image_received;
 float external_reward = 0.0f;
 dynamixel_workbench_msgs::DynamixelStateList last_dynamixel_msg;
+sensor_msgs::Imu last_head_orientation;
 
 inline float Logist(float data){ return 1.0f / (1.0f + expf(-data)); };
 
@@ -343,6 +345,22 @@ void dynamixelStateCallback(const dynamixel_workbench_msgs::DynamixelStateList& 
     last_dynamixel_msg = msg;
 }
 
+// Called when you receive an accelerometer message from the real sense camera
+void accelCallback(const sensor_msgs::Imu& msg) 
+{
+    last_head_orientation.linear_acceleration.x = msg.linear_acceleration.x;
+    last_head_orientation.linear_acceleration.y = msg.linear_acceleration.y;
+    last_head_orientation.linear_acceleration.z = msg.linear_acceleration.z;
+}
+
+// Called when you receive an gyro message from the real sense camera
+void gyroCallback(const sensor_msgs::Imu& msg) 
+{
+    last_head_orientation.angular_velocity.x = msg.angular_velocity.x;
+    last_head_orientation.angular_velocity.y = msg.angular_velocity.y;
+    last_head_orientation.angular_velocity.z = msg.angular_velocity.z;
+}
+
 /**
  * This code runs the YOLO backbone network, and then gets its drive commands from an MLP network that was trained offline.
  */
@@ -375,6 +393,8 @@ int main(int argc, char **argv)
   ros::Subscriber camera_sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
   ros::Subscriber reward_sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
   ros::Subscriber dynamixel_state_sub = n.subscribe("/dynamixel_workbench/dynamixel_state", 1, dynamixelStateCallback);
+  ros::Subscriber accel_sub = n.subscribe("/camera/accel/sample", 1, accelCallback);
+  ros::Subscriber gyro_sub = n.subscribe("/camera/gyro/sample", 1, gyroCallback);
 
   ros::Rate loop_rate(nhPriv.param<float>("update_rate", 8.0f));
 
@@ -516,14 +536,14 @@ int main(int argc, char **argv)
         mlpInputBuffer[1] = normalize_output(last_dynamixel_msg.dynamixel_state[1].present_position, tilt_min, tilt_max);
 
         // Head gyro
-        mlpInputBuffer[2] = 0.0f;
-        mlpInputBuffer[3] = 0.0f;
-        mlpInputBuffer[4] = 0.0f;
+        mlpInputBuffer[2] = last_head_orientation.angular_velocity.x;
+        mlpInputBuffer[3] = last_head_orientation.angular_velocity.y;
+        mlpInputBuffer[4] = last_head_orientation.angular_velocity.z;
 
         // Head accel
-        mlpInputBuffer[5] = 0.0f;
-        mlpInputBuffer[6] = -10.0f;
-        mlpInputBuffer[7] = 0.0f;
+        mlpInputBuffer[5] = last_head_orientation.linear_acceleration.x;
+        mlpInputBuffer[6] = last_head_orientation.linear_acceleration.y;
+        mlpInputBuffer[7] = last_head_orientation.linear_acceleration.z;
 
         // ODrive feedback
         mlpInputBuffer[8] = 0.0f;

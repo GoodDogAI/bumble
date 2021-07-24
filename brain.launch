@@ -19,7 +19,7 @@
     <param name="sampling_scale" value="0.0"/>
 
     <!-- Set to how fast you'd like the update loop to run, in Hz -->
-    <param name="update_rate" value="2.0"/>
+    <param name="update_rate" value="8.0"/>
 
     <!-- Set to true to output intermediate yolo outputs as ROS messages -->
     <param name="log_network_outputs" value="false"/>
