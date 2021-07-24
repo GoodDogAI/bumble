@@ -1,6 +1,6 @@
 <launch>
   <arg name="yolo_checkpoint" default="yolov5s" />
-  <arg name="brain_checkpoint" default="sac-13200-bs2048-dropout0.88-normalized_env_newbags" />
+  <arg name="brain_checkpoint" default="sac-elated-valley-230-05100" />
  
   <include file="$(find mainbot)/config/odrive.launch"/>
   <include file="$(find mainbot)/config/pan_tilt_config.xml"/>
@@ -16,7 +16,7 @@
     <param name="tensorrt_brain" value="/home/robot/$(arg brain_checkpoint).onnx"/>
 
     <!-- Set to 0.0 to disable sampling and use mean actions, set to 1.0 to sample actions using predicted standard deviations -->
-    <param name="sampling_scale" value="1.0"/>
+    <param name="sampling_scale" value="0.0"/>
 
     <!-- Set to how fast you'd like the update loop to run, in Hz -->
     <param name="update_rate" value="2.0"/>

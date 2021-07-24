@@ -419,6 +419,9 @@ int main(int argc, char **argv)
     << " Dims: " << mlpEngine->getBindingDimensions(ib) << " dtype: " << (int)mlpEngine->getBindingDataType(ib) <<  std::endl; 
   }
 
+  assert(mlpEngine->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[0] == 1);
+  assert(mlpEngine->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[1] == 990);
+
   samplesCommon::BufferManager yoloBuffers(mEngine, 0);
   samplesCommon::BufferManager mlpBuffers(mlpEngine, 0);
 
@@ -494,9 +497,31 @@ int main(int argc, char **argv)
         //Copy the full intermediate layer over into the SAC model
         //memcpy(mlpInputBuffer, intermediateOut, intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
 
-        //Copy every 151st element into the SAC model
-        for (int i = 0; i < 1018; i++) {
-            mlpInputBuffer[i] = intermediateOut[i * 151];
+        // Set the input observation space
+        // Normalized pan and tilt, current orientation
+        mlpInputBuffer[0] = 0.0f;
+        mlpInputBuffer[1] = 0.0f;
+
+        // Head gyro
+        mlpInputBuffer[2] = 0.0f;
+        mlpInputBuffer[3] = 0.0f;
+        mlpInputBuffer[4] = 0.0f;
+
+        // Head accel
+        mlpInputBuffer[5] = 0.0f;
+        mlpInputBuffer[6] = -10.0f;
+        mlpInputBuffer[7] = 0.0f;
+
+        // ODrive feedback
+        mlpInputBuffer[8] = 0.0f;
+        mlpInputBuffer[9] = 0.0f;
+
+        // Vbus
+        mlpInputBuffer[10] = 27.0f;
+    
+        //Copy every 157st element into the SAC model
+        for (int i = 0; i < 979; i++) {
+            mlpInputBuffer[11 + i] = intermediateOut[i * 157];
         }
 
         cudaStream_t mlpStream;
