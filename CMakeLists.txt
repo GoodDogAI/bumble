@@ -148,6 +148,7 @@ include_directories(
 add_executable(odrive src/odrive.cpp)
 add_executable(randomwalk src/randomwalk.cpp)
 add_executable(rewardbutton src/rewardbutton.cpp)
+add_executable(apprewardbutton src/apprewardbutton.cpp)
 cuda_add_executable(brain src/brain.cpp src/tensorrt_common/logger.cpp)
 
 ## Rename C++ executable without prefix
@@ -175,6 +176,10 @@ target_link_libraries(randomwalk
 )
 target_link_libraries(rewardbutton
   ${catkin_LIBRARIES}
+)
+target_link_libraries(apprewardbutton
+  ${catkin_LIBRARIES}
+  bluetooth
 )
 
 target_link_libraries(brain

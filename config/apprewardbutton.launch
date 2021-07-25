@@ -1,0 +1,5 @@
+<launch>
+  <node name="apprewardbutton" pkg="mainbot" type="apprewardbutton" required="true" output="screen">
+    <param name="penalty_duration_secs" value="2"/>
+  </node>
+</launch>
