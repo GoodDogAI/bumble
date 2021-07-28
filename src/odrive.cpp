@@ -163,7 +163,25 @@ int main(int argc, char **argv)
 
   ros::Subscriber sub = n.subscribe("cmd_vel", 10, twistCallback);
 
-  ROS_INFO("Successfully started odrive communications");
+  // Make the first communication with the ODrive
+  for (int attempt = 0; attempt < 5; attempt++) {
+      float result = send_float_command(serial_port, "r vbus_voltage\n");
+      if (std::isnan(result) || result < 0.0) {
+          if (attempt >= 4) {
+              ROS_ERROR("Could not communicate with ODrive. Exiting.");
+              return -1;
+          }
+
+          ROS_WARN("Error reading from ODrive, retrying");
+          ros::Duration(0.5).sleep();
+          continue;
+      }
+      else {
+        ROS_INFO("Successfully started odrive communications");
+        break;
+      }
+  }
+
 
   while (ros::ok())
   {
