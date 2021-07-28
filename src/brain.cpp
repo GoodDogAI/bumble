@@ -475,6 +475,9 @@ int main(int argc, char **argv)
   samplesCommon::BufferManager yoloBuffers(mEngine, 0);
   samplesCommon::BufferManager mlpBuffers(mlpEngine, 0);
 
+  cudaStream_t stream;
+  CHECK(cudaStreamCreate(&stream));
+
   while (ros::ok())
   {
     // Skip the image processing step if there is no image
@@ -495,9 +498,6 @@ int main(int argc, char **argv)
             }
         }
     
-        cudaStream_t stream;
-        CHECK(cudaStreamCreate(&stream));
-
         // Asynchronously copy data from host input buffers to device input buffers
         yoloBuffers.copyInputToDeviceAsync(stream);
 
@@ -511,9 +511,6 @@ int main(int argc, char **argv)
 
         // Wait for the work in the stream to complete
         cudaStreamSynchronize(stream);
-
-        // Release stream
-        cudaStreamDestroy(stream);
 
         //Read back the final classifications
         const float* detectionOut1 = static_cast<const float*>(yoloBuffers.getHostBuffer(OUTPUT_BINDING_NAME1));
@@ -574,25 +571,19 @@ int main(int argc, char **argv)
             mlpInputBuffer[11 + i] = intermediateOut[i * 157];
         }
 
-        cudaStream_t mlpStream;
-        CHECK(cudaStreamCreate(&mlpStream));
-
         // Asynchronously copy data from host input buffers to device input buffers
-        mlpBuffers.copyInputToDeviceAsync(mlpStream);
+        mlpBuffers.copyInputToDeviceAsync(stream);
 
         // Asynchronously enqueue the inference work
-        if (!mlpContext->enqueue(1, mlpBuffers.getDeviceBindings().data(), mlpStream, nullptr))
+        if (!mlpContext->enqueue(1, mlpBuffers.getDeviceBindings().data(), stream, nullptr))
         {
             return false;
         }
         // Asynchronously copy data from device output buffers to host output buffers
-        mlpBuffers.copyOutputToHostAsync(mlpStream);
+        mlpBuffers.copyOutputToHostAsync(stream);
 
         // Wait for the work in the stream to complete
-        cudaStreamSynchronize(mlpStream);
-
-        // Release stream
-        cudaStreamDestroy(mlpStream);
+        cudaStreamSynchronize(stream);
 
         const float* mlpOutput = static_cast<const float*>(mlpBuffers.getHostBuffer(MLP_OUTPUT_BINDING_NAME));
 
