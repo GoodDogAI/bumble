@@ -403,7 +403,8 @@ int main(int argc, char **argv)
   ros::Publisher yolo_intermediate_pub = n.advertise<std_msgs::Float32MultiArray>("yolo_intermediate", 2);
   ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
 
-  ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command");
+  // true marks the service as persistent, which greatly improves performance
+  ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command", true);
 
   ros::Subscriber camera_sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
   ros::Subscriber reward_sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
@@ -480,10 +481,10 @@ int main(int argc, char **argv)
 
   while (ros::ok())
   {
+    ros::Time start = ros::Time::now();
+
     // Skip the image processing step if there is no image
     if (cv_ptr) {
-        ros::Time start = ros::Time::now();
-
         float* hostInputBuffer = static_cast<float*>(yoloBuffers.getHostBuffer(INPUT_BINDING_NAME));
 
         //NCHW format is offset_nchw(n, c, h, w) = n * CHW + c * HW + h * W + w
@@ -648,6 +649,11 @@ int main(int argc, char **argv)
               
     ros::spinOnce();
     loop_rate.sleep();
+
+    if(loop_rate.cycleTime() > ros::Time::now() - start )
+        ROS_WARN("Control loop missed its desired rate of %.4fHz... the loop actually took %.4f seconds", 
+                        1.0 / loop_rate.expectedCycleTime().toSec(),
+                        loop_rate.cycleTime().toSec());
   }
 
 
