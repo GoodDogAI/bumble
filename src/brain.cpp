@@ -404,7 +404,8 @@ int main(int argc, char **argv)
   ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
 
   // true marks the service as persistent, which greatly improves performance
-  ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command", true);
+  // TODO: However, it appears that it doesn't work right?
+  ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command", false);
 
   ros::Subscriber camera_sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
   ros::Subscriber reward_sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
