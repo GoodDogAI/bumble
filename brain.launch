@@ -1,6 +1,7 @@
 <launch>
   <arg name="yolo_checkpoint" default="yolov5s" />
-  <arg name="brain_checkpoint" default="sac-amber-snow-284-05632" />
+  <arg name="brain_checkpoint" default="sac-lunar-deluge-288-07000" />
+  <arg name="sampling_scale" default="1.0" />
  
   <include file="$(find mainbot)/config/odrive.launch"/>
   <include file="$(find mainbot)/config/pan_tilt_config.xml"/>
@@ -8,7 +9,7 @@
   <include file="$(find mainbot)/config/camera.launch"/>
   <include file="$(find mainbot)/config/rewardbutton.launch"/>
   <include file="$(find mainbot)/config/rosbag_capture.launch">
-    <arg name="prefix" value="brain-$(arg brain_checkpoint)"/>
+    <arg name="prefix" value="brain-$(arg brain_checkpoint)-samp$(arg sampling_scale)"/>
   </include>
 
   <node name="brain" pkg="mainbot" type="brain" required="true" output="screen">
@@ -16,7 +17,7 @@
     <param name="tensorrt_brain" value="/home/robot/$(arg brain_checkpoint).onnx"/>
 
     <!-- Set to 0.0 to disable sampling and use mean actions, set to 1.0 to sample actions using predicted standard deviations -->
-    <param name="sampling_scale" value="1.0"/>
+    <param name="sampling_scale" value="$(arg sampling_scale)"/>
 
     <!-- Set to how fast you'd like the update loop to run, in Hz -->
     <param name="update_rate" value="2.0"/>
