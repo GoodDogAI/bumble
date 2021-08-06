@@ -2,7 +2,7 @@
   <arg name="prefix"/> 
 
   <node pkg="rosbag" type="record" name="rosbag_record_cam"
-    args="record -a -j --buffsize=2048 --split --duration=1m -o /media/card/record-$(arg prefix)" />
+    args="record -a -j --buffsize=4096 --split --duration=1m -o /media/card/record-$(arg prefix)" />
 
     <!-- 
         -a record everything
