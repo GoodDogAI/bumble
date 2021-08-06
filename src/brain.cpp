@@ -552,21 +552,21 @@ int main(int argc, char **argv)
         mlpInputBuffer[1] = normalize_output(last_dynamixel_msg.dynamixel_state[1].present_position, tilt_min, tilt_max);
 
         // Head gyro
-        mlpInputBuffer[2] = last_head_orientation.angular_velocity.x;
-        mlpInputBuffer[3] = last_head_orientation.angular_velocity.y;
-        mlpInputBuffer[4] = last_head_orientation.angular_velocity.z;
+        mlpInputBuffer[2] = last_head_orientation.angular_velocity.x / 10.0f;
+        mlpInputBuffer[3] = last_head_orientation.angular_velocity.y / 10.0f;
+        mlpInputBuffer[4] = last_head_orientation.angular_velocity.z / 10.0f;
 
         // Head accel
-        mlpInputBuffer[5] = last_head_orientation.linear_acceleration.x;
-        mlpInputBuffer[6] = last_head_orientation.linear_acceleration.y;
-        mlpInputBuffer[7] = last_head_orientation.linear_acceleration.z;
+        mlpInputBuffer[5] = last_head_orientation.linear_acceleration.x / 10.0f;
+        mlpInputBuffer[6] = (last_head_orientation.linear_acceleration.y + 10.0)/ 10.0f;
+        mlpInputBuffer[7] = last_head_orientation.linear_acceleration.z / 10.0f;
 
         // ODrive feedback
         mlpInputBuffer[8] = last_odrive_feedback.motor_vel_actual_0;
         mlpInputBuffer[9] = last_odrive_feedback.motor_vel_actual_1;
 
         // Vbus
-        mlpInputBuffer[10] = last_vbus;
+        mlpInputBuffer[10] = last_vbus - 27.0;
     
         //Copy every 157st element into the SAC model
         for (int i = 0; i < 979; i++) {
