@@ -558,7 +558,7 @@ int main(int argc, char **argv)
 
         // Head accel
         mlpInputBuffer[5] = last_head_orientation.linear_acceleration.x / 10.0f;
-        mlpInputBuffer[6] = (last_head_orientation.linear_acceleration.y + 10.0)/ 10.0f;
+        mlpInputBuffer[6] = last_head_orientation.linear_acceleration.y / 10.0f;
         mlpInputBuffer[7] = last_head_orientation.linear_acceleration.z / 10.0f;
 
         // ODrive feedback
