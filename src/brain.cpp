@@ -566,7 +566,7 @@ int main(int argc, char **argv)
         mlpInputBuffer[9] = last_odrive_feedback.motor_vel_actual_1;
 
         // Vbus
-        mlpInputBuffer[10] = last_vbus - 27.0;
+        mlpInputBuffer[10] = last_vbus - 27.0f;
     
         //Copy every 157st element into the SAC model
         for (int i = 0; i < 979; i++) {

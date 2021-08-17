@@ -1,7 +1,7 @@
 <launch>
   <arg name="yolo_checkpoint" default="yolov5s" />
-  <arg name="brain_checkpoint" default="sac-lunar-deluge-288-07000" />
-  <arg name="sampling_scale" default="1.0" />
+  <arg name="brain_checkpoint" default="sac-lyric-sun-355-03584" />
+  <arg name="sampling_scale" default="0.0" />
  
   <include file="$(find mainbot)/config/odrive.launch"/>
   <include file="$(find mainbot)/config/pan_tilt_config.xml"/>
