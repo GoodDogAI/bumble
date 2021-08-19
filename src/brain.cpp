@@ -21,7 +21,7 @@
 #include "tensorrt_common/buffers.h"
 
 #include <algorithm>
-
+#include <deque>
 #include <iostream>
 
 #include <fstream>
@@ -35,8 +35,9 @@
 #define INTERMEDIATE_LAYER_BINDING_NAME "300"
 
 #define MLP_INPUT_BINDING_NAME "yolo_intermediate"
+#define MLP_INPUT_SIZE 990
 #define MLP_OUTPUT_BINDING_NAME "actions"
-#define ACTIONS_STDDEV_BINDING_NAME "stddev"
+#define MLP_OUTPUT_STDDEV_BINDING_NAME "stddev"
 
 #define OBJECT_DETECTION_THRESHOLD 0.60
 
@@ -161,6 +162,14 @@ std::shared_ptr<nvinfer1::ICudaEngine> buildAndCacheEngine(const std::string& on
     cudaStream_t profileStream;
     CHECK(cudaStreamCreate(&profileStream));
     config->setProfileStream(profileStream);
+
+    // Set an optimiziation profile for any dynamic LSTM dimensions
+    nvinfer1::IOptimizationProfile* profile = builder->createOptimizationProfile();
+    profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kMIN, Dims3(1, 1, MLP_INPUT_SIZE));
+    profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kOPT, Dims3(1, 8, MLP_INPUT_SIZE));
+    profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kMAX, Dims3(1, 8, MLP_INPUT_SIZE));
+
+    config->addOptimizationProfile(profile);
 
     std::shared_ptr<nvinfer1::ICudaEngine> engine(builder->buildEngineWithConfig(*network, *config),
                                                   samplesCommon::InferDeleter());
@@ -467,18 +476,27 @@ int main(int argc, char **argv)
 
   IExecutionContext *mlpContext = mlpEngine->createExecutionContext();
 
+  // Set the LSTM input dimension to the preferred amount
+  int32_t mlp_input_history_size = nhPriv.param<int32_t>("mlp_input_history_size", 1);
+  mlpContext->setBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME),
+                                   nvinfer1::Dims3(1, mlp_input_history_size, MLP_INPUT_SIZE));
+
+
   for (int ib = 0; ib < mlpEngine->getNbBindings(); ib++) {
    std::cout << "MLPSAC " << mlpEngine->getBindingName(ib) << " isInput: " << mlpEngine->bindingIsInput(ib) 
-    << " Dims: " << mlpEngine->getBindingDimensions(ib) << " dtype: " << (int)mlpEngine->getBindingDataType(ib) <<  std::endl; 
+    << " Dims: " << mlpContext->getBindingDimensions(ib) << " dtype: " << (int)mlpEngine->getBindingDataType(ib) <<  std::endl; 
   }
 
-  assert(mlpEngine->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).nbDims == 2);
-  assert(mlpEngine->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[0] == 1);
-  assert(mlpEngine->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[1] == 990);
-  int32_t mlp_input_size = mlpEngine->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[1];
+  assert(mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).nbDims == 3);
+  assert(mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[0] == 1);
+  assert(mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[1] == mlp_input_history_size);
+  assert(mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[2] == MLP_INPUT_SIZE);
+
+  // Build a buffer to hold a history of input, in case the implementation allows for an LSTM, etc
+  std::deque<std::vector<float>> mlp_input_history;
 
   samplesCommon::BufferManager yoloBuffers(mEngine, 0);
-  samplesCommon::BufferManager mlpBuffers(mlpEngine, 0);
+  samplesCommon::BufferManager mlpBuffers(mlpEngine, 0, mlpContext);  // Need to pass in context because it has the dynamic input sizes for the LSTM
 
   cudaStream_t stream;
   CHECK(cudaStreamCreate(&stream));
@@ -543,38 +561,51 @@ int main(int argc, char **argv)
             debug_img_pub.publish(cv_ptr->toImageMsg());
         }
 
-        // Run the intermediate array through the SAC model
-        float* mlpInputBuffer = static_cast<float*>(mlpBuffers.getHostBuffer(MLP_INPUT_BINDING_NAME));
-       
-        //Copy the full intermediate layer over into the SAC model
-        //memcpy(mlpInputBuffer, intermediateOut, intermediateDims.d[0] * intermediateDims.d[1] * intermediateDims.d[2] * intermediateDims.d[3]);
+        // Build the input observation space
+        std::vector<float> mlp_input = std::vector<float>(MLP_INPUT_SIZE, 0.0);
 
-        // Set the input observation space
         // Normalized pan and tilt, current orientation
-        mlpInputBuffer[0] = normalize_output(last_dynamixel_msg.dynamixel_state[0].present_position, pan_min, pan_max);
-        mlpInputBuffer[1] = normalize_output(last_dynamixel_msg.dynamixel_state[1].present_position, tilt_min, tilt_max);
+        mlp_input[0] = normalize_output(last_dynamixel_msg.dynamixel_state[0].present_position, pan_min, pan_max);
+        mlp_input[1] = normalize_output(last_dynamixel_msg.dynamixel_state[1].present_position, tilt_min, tilt_max);
 
         // Head gyro
-        mlpInputBuffer[2] = last_head_orientation.angular_velocity.x / 10.0f;
-        mlpInputBuffer[3] = last_head_orientation.angular_velocity.y / 10.0f;
-        mlpInputBuffer[4] = last_head_orientation.angular_velocity.z / 10.0f;
+        mlp_input[2] = last_head_orientation.angular_velocity.x / 10.0f;
+        mlp_input[3] = last_head_orientation.angular_velocity.y / 10.0f;
+        mlp_input[4] = last_head_orientation.angular_velocity.z / 10.0f;
 
         // Head accel
-        mlpInputBuffer[5] = last_head_orientation.linear_acceleration.x / 10.0f;
-        mlpInputBuffer[6] = last_head_orientation.linear_acceleration.y / 10.0f;
-        mlpInputBuffer[7] = last_head_orientation.linear_acceleration.z / 10.0f;
+        mlp_input[5] = last_head_orientation.linear_acceleration.x / 10.0f;
+        mlp_input[6] = last_head_orientation.linear_acceleration.y / 10.0f;
+        mlp_input[7] = last_head_orientation.linear_acceleration.z / 10.0f;
 
         // ODrive feedback
-        mlpInputBuffer[8] = last_odrive_feedback.motor_vel_actual_0;
-        mlpInputBuffer[9] = last_odrive_feedback.motor_vel_actual_1;
+        mlp_input[8] = last_odrive_feedback.motor_vel_actual_0;
+        mlp_input[9] = last_odrive_feedback.motor_vel_actual_1;
 
         // Vbus
-        mlpInputBuffer[10] = last_vbus - 27.0f;
+        mlp_input[10] = last_vbus - 27.0f;
     
         //Copy every 157st element into the SAC model
         for (int i = 0; i < 979; i++) {
-            mlpInputBuffer[11 + i] = intermediateOut[i * 157];
+            mlp_input[11 + i] = intermediateOut[i * 157];
         }
+
+        // Put the newly constructed observation into the mlp_input_history buffer
+        mlp_input_history.push_back(mlp_input);
+
+        while (mlp_input_history.size() > mlp_input_history_size) {
+            mlp_input_history.pop_front();
+        }
+
+        // Copy the mlp_input_history buffer
+        float* mlpInputBuffer = static_cast<float*>(mlpBuffers.getHostBuffer(MLP_INPUT_BINDING_NAME));
+       
+        for (int i = 0; i < mlp_input_history.size(); i++) {
+            for (int j = 0; j < MLP_INPUT_SIZE; j++) {
+                mlpInputBuffer[i * MLP_INPUT_SIZE + j] = mlp_input_history[i][j];
+            }
+        }
+
 
         // Asynchronously copy data from host input buffers to device input buffers
         mlpBuffers.copyInputToDeviceAsync(stream);
@@ -597,7 +628,7 @@ int main(int argc, char **argv)
               pan = mlpOutput[2],
               tilt = mlpOutput[3];
 
-        const float* actionsStdDev = static_cast<const float*>(mlpBuffers.getHostBuffer(ACTIONS_STDDEV_BINDING_NAME));
+        const float* actionsStdDev = static_cast<const float*>(mlpBuffers.getHostBuffer(MLP_OUTPUT_STDDEV_BINDING_NAME));
         speed = std::clamp(speed + normal_dist(gen) * actionsStdDev[0] * sampling_scale, SPEED_MIN, SPEED_MAX);
         ang = std::clamp(ang + normal_dist(gen) * actionsStdDev[1] * sampling_scale, ROTATION_MIN, ROTATION_MAX);
         pan = std::clamp(pan + normal_dist(gen) * actionsStdDev[2] * sampling_scale, PAN_MIN, PAN_MAX);
@@ -644,7 +675,7 @@ int main(int argc, char **argv)
 
         // Publish the brain inputs so we can make sure they match up with what we are passing in during training
         std_msgs::Float32MultiArray brain_inputs_msg;
-        brain_inputs_msg.data = std::vector<float>(mlpInputBuffer, mlpInputBuffer + mlp_input_size);
+        brain_inputs_msg.data = std::vector<float>(mlpInputBuffer, mlpInputBuffer + (mlp_input_history.size() * MLP_INPUT_SIZE));
         brain_inputs_pub.publish(brain_inputs_msg);
 
 
