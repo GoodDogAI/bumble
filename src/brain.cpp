@@ -644,7 +644,7 @@ int main(int argc, char **argv)
 
         // Publish the brain inputs so we can make sure they match up with what we are passing in during training
         std_msgs::Float32MultiArray brain_inputs_msg;
-        memcpy(brain_inputs_msg.data.data(), mlpInputBuffer, mlp_input_size * sizeof(float));
+        brain_inputs_msg.data = std::vector<float>(mlpInputBuffer, mlpInputBuffer + mlp_input_size);
         brain_inputs_pub.publish(brain_inputs_msg);
 
 
