@@ -402,6 +402,7 @@ int main(int argc, char **argv)
   // Typically you would not enable this, because the bag recording will have trouble keeping up
   ros::Publisher yolo_intermediate_pub = n.advertise<std_msgs::Float32MultiArray>("yolo_intermediate", 2);
   ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
+  ros::Publisher brain_inputs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_inputs", 2);
 
   // true marks the service as persistent, which greatly improves performance
   // TODO: However, it appears that it doesn't work right?
@@ -471,8 +472,10 @@ int main(int argc, char **argv)
     << " Dims: " << mlpEngine->getBindingDimensions(ib) << " dtype: " << (int)mlpEngine->getBindingDataType(ib) <<  std::endl; 
   }
 
+  assert(mlpEngine->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).nbDims == 2);
   assert(mlpEngine->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[0] == 1);
   assert(mlpEngine->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[1] == 990);
+  int32_t mlp_input_size = mlpEngine->getBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME)).d[1];
 
   samplesCommon::BufferManager yoloBuffers(mEngine, 0);
   samplesCommon::BufferManager mlpBuffers(mlpEngine, 0);
@@ -638,6 +641,12 @@ int main(int argc, char **argv)
         feedback_msg.tilt_command = tilt;
         feedback_msg.header.stamp = ros::Time::now();
         feedback_pub.publish(feedback_msg);
+
+        // Publish the brain inputs so we can make sure they match up with what we are passing in during training
+        std_msgs::Float32MultiArray brain_inputs_msg;
+        memcpy(brain_inputs_msg.data.data(), mlpInputBuffer, mlp_input_size * sizeof(float));
+        brain_inputs_pub.publish(brain_inputs_msg);
+
 
         // Clear out the image pointer, so we don't reprocess this image anymore
         cv_ptr = nullptr;
