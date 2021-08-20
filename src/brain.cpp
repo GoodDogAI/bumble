@@ -411,7 +411,9 @@ int main(int argc, char **argv)
   // Typically you would not enable this, because the bag recording will have trouble keeping up
   ros::Publisher yolo_intermediate_pub = n.advertise<std_msgs::Float32MultiArray>("yolo_intermediate", 2);
   ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
+  
   ros::Publisher brain_inputs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_inputs", 2);
+  ros::Publisher brain_outputs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_outputs", 2);
 
   // true marks the service as persistent, which greatly improves performance
   // TODO: However, it appears that it doesn't work right?
@@ -494,6 +496,11 @@ int main(int argc, char **argv)
 
   // Build a buffer to hold a history of input, in case the implementation allows for an LSTM, etc
   std::deque<std::vector<float>> mlp_input_history;
+
+  // Prefill the buffer with zero entry vectors
+  for (int32_t i = 0; i < mlp_input_history_size; i++) {
+      mlp_input_history.push_back(std::vector<float>(MLP_INPUT_SIZE, 0.0));
+  }
 
   samplesCommon::BufferManager yoloBuffers(mEngine, 0);
   samplesCommon::BufferManager mlpBuffers(mlpEngine, 0, mlpContext);  // Need to pass in context because it has the dynamic input sizes for the LSTM
@@ -601,11 +608,8 @@ int main(int argc, char **argv)
         float* mlpInputBuffer = static_cast<float*>(mlpBuffers.getHostBuffer(MLP_INPUT_BINDING_NAME));
        
         for (int i = 0; i < mlp_input_history.size(); i++) {
-            for (int j = 0; j < MLP_INPUT_SIZE; j++) {
-                mlpInputBuffer[i * MLP_INPUT_SIZE + j] = mlp_input_history[i][j];
-            }
+            memcpy(mlpInputBuffer + i * MLP_INPUT_SIZE, mlp_input_history[i].data(), MLP_INPUT_SIZE * sizeof(float));
         }
-
 
         // Asynchronously copy data from host input buffers to device input buffers
         mlpBuffers.copyInputToDeviceAsync(stream);
@@ -673,10 +677,15 @@ int main(int argc, char **argv)
         feedback_msg.header.stamp = ros::Time::now();
         feedback_pub.publish(feedback_msg);
 
-        // Publish the brain inputs so we can make sure they match up with what we are passing in during training
+        // Publish the brain IOs so we can make sure they match up with what we are passing in during training
         std_msgs::Float32MultiArray brain_inputs_msg;
         brain_inputs_msg.data = std::vector<float>(mlpInputBuffer, mlpInputBuffer + (mlp_input_history.size() * MLP_INPUT_SIZE));
         brain_inputs_pub.publish(brain_inputs_msg);
+
+        std_msgs::Float32MultiArray brain_outputs_msg;
+        brain_outputs_msg.data = std::vector<float>(mlpOutput, 
+                                                    mlpOutput + mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_OUTPUT_BINDING_NAME)).d[1]);
+        brain_outputs_pub.publish(brain_outputs_msg);
 
 
         // Clear out the image pointer, so we don't reprocess this image anymore
