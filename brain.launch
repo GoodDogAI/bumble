@@ -1,6 +1,6 @@
 <launch>
   <arg name="yolo_checkpoint" default="yolov5s" />
-  <arg name="brain_checkpoint" default="test-lstm" />
+  <arg name="brain_checkpoint" default="freshplant18200" />
   <arg name="sampling_scale" default="0.0" />
  
   <include file="$(find mainbot)/config/odrive.launch"/>

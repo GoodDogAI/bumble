@@ -6,6 +6,7 @@
 #include "std_msgs/Float32.h"
 #include "std_msgs/Float32MultiArray.h"
 #include "sensor_msgs/Image.h"
+#include "sensor_msgs/image_encodings.h"
 #include "sensor_msgs/Imu.h"
 #include "geometry_msgs/Twist.h"
 #include "dynamixel_workbench_msgs/DynamixelCommand.h"
@@ -14,7 +15,6 @@
 #include "mainbot/ODriveFeedback.h"
 
 #include <boost/make_shared.hpp>
-#include <cv_bridge/cv_bridge.h>
 
 #include "NvOnnxParser.h"
 #include "NvInfer.h"
@@ -54,7 +54,8 @@ const float TILT_MAX = 1;
 
 using namespace nvinfer1;
 
-cv_bridge::CvImagePtr cv_ptr;
+sensor_msgs::ImageConstPtr image_ptr;
+
 ros::Time last_image_received;
 float external_reward = 0.0f;
 dynamixel_workbench_msgs::DynamixelStateList last_dynamixel_msg;
@@ -284,8 +285,10 @@ void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
                                                         col * dims.d[4] +
                                                         3]);
                         height = height * height * kernel.anchors[2*c + 1];
-                        std::cout << cv::Rect(x,y,width,height) << std::endl;
-                        cv::rectangle(cv_ptr->image, cv::Rect(x - width / 2,y - height / 2,width,height), CV_RGB(255,0,0));
+                        std::cout << x << ", " << y << "  dims " << width << "x" << height << std::endl;
+
+                        // Not using opencv anymore, because it's dependency hell
+                        // cv::rectangle(cv_ptr->image, cv::Rect(x - width / 2,y - height / 2,width,height), CV_RGB(255,0,0));
                     }                                                                
                 }
             }
@@ -334,7 +337,8 @@ void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
   ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
             img->encoding.c_str(), img->width, img->height);
 
-  cv_ptr = cv_bridge::toCvCopy(img, "rgb8");
+  image_ptr = img;
+
   last_image_received = ros::Time::now();
 }
 
@@ -513,18 +517,18 @@ int main(int argc, char **argv)
     ros::Time start = ros::Time::now();
 
     // Skip the image processing step if there is no image
-    if (cv_ptr) {
+    if (image_ptr) {
         float* hostInputBuffer = static_cast<float*>(yoloBuffers.getHostBuffer(INPUT_BINDING_NAME));
 
-        //NCHW format is offset_nchw(n, c, h, w) = n * CHW + c * HW + h * W + w
-        for(int i=0; i < cv_ptr->image.rows; i++) {
-            // pointer to first pixel in row
-            cv::Vec3b* pixel = cv_ptr->image.ptr<cv::Vec3b>(i);
+        // Only MONO8 encoding is supported for now
+        assert(image_ptr->encoding == sensor_msgs::image_encodings::MONO8);
 
-            for(int j=0; j < cv_ptr->image.cols; j++) {
-                hostInputBuffer[0 * cv_ptr->image.rows * cv_ptr->image.cols + i * cv_ptr->image.cols + j] = pixel[j][0] / 255.0;
-                hostInputBuffer[1 * cv_ptr->image.rows * cv_ptr->image.cols + i * cv_ptr->image.cols + j] = pixel[j][1] / 255.0;
-                hostInputBuffer[2 * cv_ptr->image.rows * cv_ptr->image.cols + i * cv_ptr->image.cols + j] = pixel[j][2] / 255.0;
+        //NCHW format is offset_nchw(n, c, h, w) = n * CHW + c * HW + h * W + w
+        for(int i=0; i < image_ptr->height; i++) {
+            for(int j=0; j < image_ptr->width; j++) {
+                hostInputBuffer[0 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j] / 255.0;
+                hostInputBuffer[1 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j] / 255.0;
+                hostInputBuffer[2 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j] / 255.0;
             }
         }
     
@@ -565,7 +569,7 @@ int main(int argc, char **argv)
             write_intermediate_outputs(yolo_intermediate, intermediateOut, intermediateDims);
             yolo_intermediate_pub.publish(yolo_intermediate);
 
-            debug_img_pub.publish(cv_ptr->toImageMsg());
+            //debug_img_pub.publish(cv_ptr->toImageMsg());
         }
 
         // Build the input observation space
@@ -610,7 +614,7 @@ int main(int argc, char **argv)
         for (int i = 0; i < mlp_input_history.size(); i++) {
             memcpy(mlpInputBuffer + i * MLP_INPUT_SIZE, mlp_input_history[i].data(), MLP_INPUT_SIZE * sizeof(float));
         }
-
+    
         // Asynchronously copy data from host input buffers to device input buffers
         mlpBuffers.copyInputToDeviceAsync(stream);
 
@@ -689,7 +693,7 @@ int main(int argc, char **argv)
 
 
         // Clear out the image pointer, so we don't reprocess this image anymore
-        cv_ptr = nullptr;
+        image_ptr = nullptr;
         std::cout << "Took " << ros::Time::now() - start << std::endl;          
     }
     else if (last_image_received > ros::Time(0) && ros::Time::now() - last_image_received > ros::Duration(1.0)) {
