@@ -1,5 +1,6 @@
 <launch>
   <include file="$(find mainbot)/config/odrive.launch"/>
+  <include file="$(find mainbot)/config/audio.launch"/>
   <include file="$(find mainbot)/config/pan_tilt_config.xml"/>
   <include file="$(find mainbot)/config/pan_tilt_controller.launch"/>
   <include file="$(find mainbot)/config/camera.launch"/>
