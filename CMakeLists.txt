@@ -17,6 +17,9 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
 )
 
+find_package(PkgConfig)
+pkg_check_modules(GST1.0 gstreamer-1.0 REQUIRED)
+
 find_package(CUDA)
 
 
@@ -127,6 +130,7 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  ${GST1.0_INCLUDE_DIRS}
   ${CUDA_INSTALL_DIR}/include
 )
 
@@ -148,6 +152,7 @@ add_executable(odrive src/odrive.cpp)
 add_executable(randomwalk src/randomwalk.cpp)
 add_executable(rewardbutton src/rewardbutton.cpp)
 add_executable(apprewardbutton src/apprewardbutton.cpp)
+add_executable(audiostreamer src/audiostreamer.cpp)
 cuda_add_executable(brain src/brain.cpp src/tensorrt_common/logger.cpp)
 
 ## Rename C++ executable without prefix
@@ -175,6 +180,10 @@ target_link_libraries(randomwalk
 )
 target_link_libraries(rewardbutton
   ${catkin_LIBRARIES}
+)
+target_link_libraries(audiostreamer
+  ${catkin_LIBRARIES}
+  ${GST1.0_LIBRARIES}
 )
 target_link_libraries(apprewardbutton
   ${catkin_LIBRARIES}

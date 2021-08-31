@@ -1,5 +1,5 @@
 <launch>
-    <node name="audio_capture" pkg="audio_capture" type="audio_capture" required="true" output="screen">
+    <node name="audiostreamer" pkg="mainbot" type="audiostreamer" required="true" output="screen">
       <param name="device" value="hw:tegrasndt19xmob,0"/>
       <param name="channels" value="1"/>
       <param name="sample_rate" value="48000"/>
