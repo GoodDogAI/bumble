@@ -3,7 +3,7 @@
       <param name="device" value="hw:tegrasndt19xmob,0"/>
       <param name="channels" value="1"/>
       <param name="sample_rate" value="48000"/>
-      <param name="sample_format" value="S32LE"/>
+      <param name="sample_format" value="F32LE"/>
       <param name="format" value="wave"/>
     </node>
 </launch>

@@ -21,7 +21,7 @@ namespace audio_transport
 
         // Need to encoding or publish raw wave data
         ros::param::param<std::string>("~format", _format, "mp3");
-        ros::param::param<std::string>("~sample_format", _sample_format, "S16LE");
+        ros::param::param<std::string>("~sample_format", _sample_format, "F32LE");
 
         // The bitrate at which to encode the audio
         ros::param::param<int>("~bitrate", _bitrate, 192);
@@ -77,64 +77,48 @@ namespace audio_transport
           g_object_set(G_OBJECT(_source), "device", device.c_str(), NULL);
         }
 
-        GstCaps *caps;
-        caps = gst_caps_new_simple("audio/x-raw",
-                                   "format", G_TYPE_STRING, _sample_format.c_str(),
-                                   "channels", G_TYPE_INT, _channels,
-                                   "width",    G_TYPE_INT, _depth,
-                                   "depth",    G_TYPE_INT, _depth,
+        _filterconvertin = gst_element_factory_make("audioconvert", "filterconvertin");
+        _highpass = gst_element_factory_make("audiowsinclimit", "highpass");
+        g_object_set(G_OBJECT(_highpass), "cutoff", 20.0, NULL);
+
+        //Set the filter mode to high-pass
+        g_object_set(G_OBJECT(_highpass), "mode", 1, NULL);
+
+        _filterconvertout = gst_element_factory_make("audioconvert", "filterconvertout");
+
+        GstCaps *input_caps;
+        input_caps = gst_caps_new_simple("audio/x-raw",
+                                   "format", G_TYPE_STRING, "S32LE",
+                                   "channels", G_TYPE_INT, 1,
                                    "rate",     G_TYPE_INT, _sample_rate,
                                    "signed",   G_TYPE_BOOLEAN, TRUE,
                                    NULL);
 
+        GstCaps *output_caps;
+        output_caps = gst_caps_new_simple("audio/x-raw",
+                                   "format", G_TYPE_STRING, _sample_format.c_str(),
+                                   "channels", G_TYPE_INT, 1,
+                                   "rate",     G_TYPE_INT, _sample_rate,
+                                   NULL);
+
+
         gboolean link_ok;
-        if (_format == "mp3"){
-          _filter = gst_element_factory_make("capsfilter", "filter");
-          g_object_set( G_OBJECT(_filter), "caps", caps, NULL);
-          gst_caps_unref(caps);
-
-          _convert = gst_element_factory_make("audioconvert", "convert");
-          if (!_convert) {
-            ROS_ERROR_STREAM("Failed to create audioconvert element");
-            exitOnMainThread(1);
-          }
-
-          _encode = gst_element_factory_make("lamemp3enc", "encoder");
-          if (!_encode) {
-            ROS_ERROR_STREAM("Failed to create encoder element");
-            exitOnMainThread(1);
-          }
-          g_object_set( G_OBJECT(_encode), "target", 1, NULL);
-          g_object_set( G_OBJECT(_encode), "bitrate", _bitrate, NULL);
-
-          gst_bin_add_many( GST_BIN(_pipeline), _source, _filter, _convert, _encode, _sink, NULL);
-          link_ok = gst_element_link_many(_source, _filter, _convert, _encode, _sink, NULL);
-        } else if (_format == "wave") {
+        if (_format == "wave") {
           if (dst_type == "appsink") {
-            g_object_set( G_OBJECT(_sink), "caps", caps, NULL);
-            gst_caps_unref(caps);
-            gst_bin_add_many( GST_BIN(_pipeline), _source, _sink, NULL);
-            link_ok = gst_element_link_many( _source, _sink, NULL);
+            g_object_set( G_OBJECT(_sink), "caps", output_caps, NULL);
+            gst_caps_unref(output_caps);
+
+            gst_bin_add_many( GST_BIN(_pipeline), _source, _filterconvertin, _highpass, _filterconvertout, _sink, NULL);
+            link_ok = gst_element_link_filtered(_source, _filterconvertin, input_caps);
+            link_ok = gst_element_link_many(_filterconvertin, _filterconvertout, _sink, NULL);
           } else {
-            _filter = gst_element_factory_make("wavenc", "filter");
-            gst_bin_add_many( GST_BIN(_pipeline), _source, _filter, _sink, NULL);
-            link_ok = gst_element_link_many( _source, _filter, _sink, NULL);
+            ROS_ERROR_STREAM("dst_type must be \"appsink\"");
+            exitOnMainThread(1);
           }
         } else {
-          ROS_ERROR_STREAM("format must be \"wave\" or \"mp3\"");
+          ROS_ERROR_STREAM("format must be \"wave\"");
           exitOnMainThread(1);
         }
-        /*}
-        else
-        {
-          _sleep_time = 10000;
-          _source = gst_element_factory_make("filesrc", "source");
-          g_object_set(G_OBJECT(_source), "location", source_type.c_str(), NULL);
-
-          gst_bin_add_many( GST_BIN(_pipeline), _source, _sink, NULL);
-          gst_element_link_many(_source, _sink, NULL);
-        }
-        */
 
         if (!link_ok) {
           ROS_ERROR_STREAM("Unsupported media type.");
@@ -188,6 +172,8 @@ namespace audio_transport
 
         memcpy( &msg.data[0], map.data, map.size );
 
+        ROS_INFO("Buf value 0 %f", ((float *)map.data)[0]);
+
         gst_buffer_unmap(buffer, &map);
         gst_sample_unref(sample);
 
@@ -218,7 +204,7 @@ namespace audio_transport
 
       boost::thread _gst_thread;
 
-      GstElement *_pipeline, *_source, *_filter, *_sink, *_convert, *_encode;
+      GstElement *_pipeline, *_source, *_filterconvertin, *_highpass, *_filter, *_filterconvertout, *_sink;
       GstBus *_bus;
       int _bitrate, _channels, _depth, _sample_rate;
       GMainLoop *_loop;
