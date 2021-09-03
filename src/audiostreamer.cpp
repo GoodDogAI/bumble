@@ -94,12 +94,11 @@ namespace audio_transport
         g_object_set(G_OBJECT(_compressor), "mode", 0, NULL);  // 0 = compressor, 1 = expander
         g_object_set(G_OBJECT(_compressor), "characteristics", 1, NULL);  //Set to "soft-knee" mode
         g_object_set(G_OBJECT(_compressor), "threshold", 0.5f, NULL); 
-        g_object_set(G_OBJECT(_compressor), "ratio", 8.0f, NULL); 
+        g_object_set(G_OBJECT(_compressor), "ratio", 5.0f, NULL); 
 
         _amp2 = gst_element_factory_make("audioamplify", "amp2");
         g_object_set(G_OBJECT(_amp2), "amplification", 1.5f, NULL);
         g_object_set(G_OBJECT(_amp2), "clipping-method", 0, NULL); // Actual clipping, and a little bit of make up gain after the limiter
-
 
         _filterconvertout = gst_element_factory_make("audioconvert", "filterconvertout");
 
