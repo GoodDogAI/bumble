@@ -83,21 +83,22 @@ namespace audio_transport
         g_object_set(G_OBJECT(_highpass), "length", 501, NULL); // Default is 101, 501 is a good balance for quality and performance
         g_object_set(G_OBJECT(_highpass), "mode", 1, NULL);  //Set the filter mode to high-pass, 1 = highpass, 0 = lowpass
 
-        // _dynamic = gst_element_factory_make("audiodynamic", "dynamic");
-        // g_object_set(G_OBJECT(_dynamic), "mode", 0, NULL);  //Set to "expander" mode, to increase volume
-        // g_object_set(G_OBJECT(_dynamic), "characteristics", 1, NULL);  //Set to "soft-knee" mode
-        // g_object_set(G_OBJECT(_dynamic), "threshold", 0.9f, NULL); 
-        // g_object_set(G_OBJECT(_dynamic), "ratio", 1/8.0f, NULL); 
 
-        _dynamic = gst_element_factory_make("audioamplify", "dynamic");
-        g_object_set(G_OBJECT(_dynamic), "amplification", 42.0f, NULL);
-        g_object_set(G_OBJECT(_dynamic), "clipping-method", 3, NULL); //No clipping, so that the limiter can be applied afterwards
+        _amp1 = gst_element_factory_make("audioamplify", "amp1");
+        g_object_set(G_OBJECT(_amp1), "amplification", 42.0f, NULL);
+        g_object_set(G_OBJECT(_amp1), "clipping-method", 3, NULL); //No clipping, so that the limiter can be applied afterwards
 
         _limiter = gst_element_factory_make("rglimiter", "limit");
 
-        _clipper = gst_element_factory_make("audioamplify", "dynamic");
-        g_object_set(G_OBJECT(_clipper), "amplification", 1.0f, NULL);
-        g_object_set(G_OBJECT(_clipper), "clipping-method", 0, NULL); //Apply some final clipping after ther limiter, just in case
+        _compressor = gst_element_factory_make("audiodynamic", "compressor");
+        g_object_set(G_OBJECT(_compressor), "mode", 0, NULL);  // 0 = compressor, 1 = expander
+        g_object_set(G_OBJECT(_compressor), "characteristics", 1, NULL);  //Set to "soft-knee" mode
+        g_object_set(G_OBJECT(_compressor), "threshold", 0.5f, NULL); 
+        g_object_set(G_OBJECT(_compressor), "ratio", 8.0f, NULL); 
+
+        _amp2 = gst_element_factory_make("audioamplify", "amp2");
+        g_object_set(G_OBJECT(_amp2), "amplification", 1.5f, NULL);
+        g_object_set(G_OBJECT(_amp2), "clipping-method", 0, NULL); // Actual clipping, and a little bit of make up gain after the limiter
 
 
         _filterconvertout = gst_element_factory_make("audioconvert", "filterconvertout");
@@ -124,9 +125,9 @@ namespace audio_transport
             g_object_set( G_OBJECT(_sink), "caps", output_caps, NULL);
             gst_caps_unref(output_caps);
 
-            gst_bin_add_many( GST_BIN(_pipeline), _source, _filterconvertin, _highpass, _dynamic, _limiter, _clipper, _filterconvertout, _sink, NULL);
+            gst_bin_add_many( GST_BIN(_pipeline), _source, _filterconvertin, _amp1, _amp2, _highpass, _compressor, _limiter, _filterconvertout, _sink, NULL);
             link_ok = gst_element_link_filtered(_source, _filterconvertin, input_caps);
-            link_ok = gst_element_link_many(_filterconvertin, _highpass, _dynamic, _limiter, _clipper, _filterconvertout, _sink, NULL);
+            link_ok = gst_element_link_many(_filterconvertin, _highpass, _amp1, _limiter, _compressor, _amp2, _filterconvertout, _sink, NULL);
           } else {
             ROS_ERROR_STREAM("dst_type must be \"appsink\"");
             exitOnMainThread(1);
@@ -220,7 +221,7 @@ namespace audio_transport
 
       boost::thread _gst_thread;
 
-      GstElement *_pipeline, *_source, *_filterconvertin, *_highpass, *_dynamic, *_limiter, *_clipper, *_filter, *_filterconvertout, *_sink;
+      GstElement *_pipeline, *_source, *_filterconvertin, *_highpass, *_compressor, *_amp1, *_amp2, *_limiter, *_clipper, *_filter, *_filterconvertout, *_sink;
       GstBus *_bus;
       int _bitrate, _channels, _depth, _sample_rate;
       GMainLoop *_loop;
