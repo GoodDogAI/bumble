@@ -575,26 +575,30 @@ inline void enableDLA(IBuilder* builder, IBuilderConfig* config, int useDLACore,
 {
     if (useDLACore >= 0)
     {
-        if (builder->getNbDLACores() == 0)
-        {
-            std::cerr << "Trying to use DLA core " << useDLACore << " on a platform that doesn't have any DLA cores"
-                      << std::endl;
-            assert("Error: use DLA core on a platfrom that doesn't have any DLA cores" && false);
-        }
-        if (allowGPUFallback)
-        {
-            config->setFlag(BuilderFlag::kGPU_FALLBACK);
-        }
-        if (!builder->getInt8Mode() && !config->getFlag(BuilderFlag::kINT8))
-        {
-            // User has not requested INT8 Mode.
-            // By default run in FP16 mode. FP32 mode is not permitted.
-            builder->setFp16Mode(true);
-            config->setFlag(BuilderFlag::kFP16);
-        }
-        config->setDefaultDeviceType(DeviceType::kDLA);
-        config->setDLACore(useDLACore);
-        config->setFlag(BuilderFlag::kSTRICT_TYPES);
+        // We are not using the DLA cores right now, will require to reimplement this function for the latest version
+        // of tensor rt
+        exit(1);
+
+        // if (builder->getNbDLACores() == 0)
+        // {
+        //     std::cerr << "Trying to use DLA core " << useDLACore << " on a platform that doesn't have any DLA cores"
+        //               << std::endl;
+        //     assert("Error: use DLA core on a platfrom that doesn't have any DLA cores" && false);
+        // }
+        // if (allowGPUFallback)
+        // {
+        //     config->setFlag(BuilderFlag::kGPU_FALLBACK);
+        // }
+        // if (!builder->getInt8Mode() && !config->getFlag(BuilderFlag::kINT8))
+        // {
+        //     // User has not requested INT8 Mode.
+        //     // By default run in FP16 mode. FP32 mode is not permitted.
+        //     builder->setFp16Mode(true);
+        //     config->setFlag(BuilderFlag::kFP16);
+        // }
+        // config->setDefaultDeviceType(DeviceType::kDLA);
+        // config->setDLACore(useDLACore);
+        // config->setFlag(BuilderFlag::kSTRICT_TYPES);
     }
 }
 
