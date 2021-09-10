@@ -79,7 +79,7 @@ using TrtUniquePtr = std::unique_ptr<T, TrtDestroyer<T>>;
 
 class Logger : public ILogger           
  {
-     void log(Severity severity, const char* msg) override
+     void log(Severity severity, const char* msg) noexcept override
      {
          // suppress info-level messages
          if (severity != Severity::kINFO)

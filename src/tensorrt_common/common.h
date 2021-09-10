@@ -145,7 +145,7 @@ struct SimpleProfiler : public nvinfer1::IProfiler
         int count{0};
     };
 
-    virtual void reportLayerTime(const char* layerName, float ms)
+    virtual void reportLayerTime(const char* layerName, float ms) noexcept
     {
         mProfile[layerName].count++;
         mProfile[layerName].time += ms;
@@ -297,22 +297,23 @@ inline T swapEndianness(const T& value)
     return *reinterpret_cast<T*>(bytes);
 }
 
-class HostMemory : public IHostMemory
+class HostMemory
 {
 public:
     HostMemory() = delete;
-    void* data() const noexcept override
+    virtual void* data() const noexcept
     {
         return mData;
     }
-    std::size_t size() const noexcept override
+    virtual std::size_t size() const noexcept
     {
         return mSize;
     }
-    DataType type() const noexcept override
+    virtual DataType type() const noexcept
     {
         return mType;
     }
+    virtual ~HostMemory() {}
 
 protected:
     HostMemory(std::size_t size, DataType type)
