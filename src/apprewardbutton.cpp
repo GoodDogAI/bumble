@@ -1,4 +1,5 @@
 #include "ros/ros.h"
+#include "std_msgs/Bool.h"
 #include "std_msgs/Float32.h"
 
 #include <unistd.h>
@@ -7,6 +8,8 @@
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/rfcomm.h>
 #include <vector>
+
+#define MAX_MISSED_INTERVALS 3
 
 int main(int argc, char **argv)
 {
@@ -17,6 +20,7 @@ int main(int argc, char **argv)
   ros::NodeHandle nhPriv("~");
 
   ros::Publisher reward_pub = n.advertise<std_msgs::Float32>("reward_button", 2);
+  ros::Publisher reward_connected = n.advertise<std_msgs::Bool>("reward_button_connected", false);
 
   // Ros Params for settings rewards/penalties
   ros::Duration penalty_duration = ros::Duration(nhPriv.param<float>("penalty_duration_secs", 1.0));
@@ -49,6 +53,11 @@ int main(int argc, char **argv)
     std::vector<pollfd> input_fds;
     input_fds.push_back({s, POLLIN, 0});
 
+    // Track time since last connection.
+    int missed_intervals = 0;
+    std_msgs::Bool connected_msg;
+    connected_msg.data = false;
+
     while(ros::ok()) {
         int ret = poll(input_fds.data(), input_fds.size(), 500);
         if (input_fds[0].revents & POLLIN) {
@@ -64,10 +73,23 @@ int main(int argc, char **argv)
             bytes_read = read(client, buf, sizeof(buf));
             if( bytes_read > 0 ) {
                 ROS_INFO("received [%s]", buf);
+                if (!connected_msg.data) {
+                    ROS_INFO("connected");
+                    connected_msg.data = true;
+                    reward_connected.publish(connected_msg);
+                }
+                missed_intervals = 0;
             }
 
             // close connection
             close(client);
+        } else {
+            missed_intervals++;
+            if (missed_intervals >= MAX_MISSED_INTERVALS && connected_msg.data) {
+                ROS_INFO("disconnected");
+                connected_msg.data = false;
+                reward_connected.publish(connected_msg);
+            }
         }
         ros::spinOnce();
     }
