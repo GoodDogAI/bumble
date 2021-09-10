@@ -1,6 +1,6 @@
 <launch>
   <arg name="yolo_checkpoint" default="yolov5s" />
-  <arg name="brain_checkpoint" default="sac-upbeat-donkey-432-18944" />
+  <arg name="brain_checkpoint" default="sac-pleasant-frog-450-02048" />
   <arg name="sampling_scale" default="0.0" />
  
   <include file="$(find mainbot)/config/odrive.launch"/>
@@ -25,7 +25,7 @@
     <param name="update_rate" value="2.0"/>
 
     <!-- How much history to store and pass into a recurrent input component -->
-    <param name="mlp_input_history_size" value="8"/>
+    <param name="mlp_input_history_size" value="240"/>
 
     <!-- Set to true to output intermediate yolo outputs as ROS messages -->
     <param name="log_network_outputs" value="false"/>

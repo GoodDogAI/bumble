@@ -120,7 +120,7 @@ std::shared_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& engine_path
                                                   samplesCommon::InferDeleter());
 }
 
-std::shared_ptr<nvinfer1::ICudaEngine> buildAndCacheEngine(const std::string& onnx_path) {
+std::shared_ptr<nvinfer1::ICudaEngine> buildAndCacheEngine(const std::string& onnx_path, int32_t mlp_input_history_size) {
     auto builder = TrtUniquePtr<nvinfer1::IBuilder>(nvinfer1::createInferBuilder(gLogger));
     if (!builder)
     {
@@ -167,8 +167,8 @@ std::shared_ptr<nvinfer1::ICudaEngine> buildAndCacheEngine(const std::string& on
     // Set an optimiziation profile for any dynamic LSTM dimensions
     nvinfer1::IOptimizationProfile* profile = builder->createOptimizationProfile();
     profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kMIN, Dims3(1, 1, MLP_INPUT_SIZE));
-    profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kOPT, Dims3(1, 8, MLP_INPUT_SIZE));
-    profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kMAX, Dims3(1, 8, MLP_INPUT_SIZE));
+    profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kOPT, Dims3(1, mlp_input_history_size, MLP_INPUT_SIZE));
+    profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kMAX, Dims3(1, mlp_input_history_size, MLP_INPUT_SIZE));
 
     config->addOptimizationProfile(profile);
 
@@ -432,6 +432,7 @@ int main(int argc, char **argv)
   ros::Subscriber vbus_sub = n.subscribe("/vbus", 1, vbusCallback);
 
   ros::Rate loop_rate(nhPriv.param<float>("update_rate", 8.0f));
+  int32_t mlp_input_history_size = nhPriv.param<int32_t>("mlp_input_history_size", 1);
 
   std::random_device rd;  //Will be used to obtain a seed for the random number engine
   std::mt19937 gen(rd());
@@ -452,7 +453,7 @@ int main(int argc, char **argv)
   std::shared_ptr<nvinfer1::ICudaEngine> mEngine = loadEngine(yolo_model_path + ".engine");
 
   if (mEngine == nullptr) {
-    mEngine = buildAndCacheEngine(yolo_model_path);
+    mEngine = buildAndCacheEngine(yolo_model_path, 1);
 
     if (mEngine == nullptr) {
       std::cout << "Error loading YOLO engine" << std::endl;
@@ -472,7 +473,7 @@ int main(int argc, char **argv)
   std::shared_ptr<nvinfer1::ICudaEngine> mlpEngine = loadEngine(brain_model_path + ".engine");
 
   if (mlpEngine == nullptr) {
-    mlpEngine = buildAndCacheEngine(brain_model_path);
+    mlpEngine = buildAndCacheEngine(brain_model_path, mlp_input_history_size);
 
     if (mlpEngine == nullptr) {
       std::cout << "Error loading SAC MLP engine" << std::endl;
@@ -482,8 +483,7 @@ int main(int argc, char **argv)
 
   IExecutionContext *mlpContext = mlpEngine->createExecutionContext();
 
-  // Set the LSTM input dimension to the preferred amount
-  int32_t mlp_input_history_size = nhPriv.param<int32_t>("mlp_input_history_size", 1);
+  // Set the variable input time dimension to the preferred amount
   mlpContext->setBindingDimensions(mlpEngine->getBindingIndex(MLP_INPUT_BINDING_NAME),
                                    nvinfer1::Dims3(1, mlp_input_history_size, MLP_INPUT_SIZE));
 
