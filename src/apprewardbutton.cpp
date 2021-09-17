@@ -1,6 +1,6 @@
 #include "ros/ros.h"
 #include "std_msgs/Bool.h"
-#include "std_msgs/Float32.h"
+#include "std_msgs/Byte.h"
 
 #include <unistd.h>
 #include <sys/socket.h>
@@ -19,12 +19,8 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
   ros::NodeHandle nhPriv("~");
 
-  ros::Publisher reward_pub = n.advertise<std_msgs::Float32>("reward_button", 2);
+  ros::Publisher reward_pub = n.advertise<std_msgs::Byte>("reward_button", 0);
   ros::Publisher reward_connected = n.advertise<std_msgs::Bool>("reward_button_connected", false);
-
-  // Ros Params for settings rewards/penalties
-  ros::Duration penalty_duration = ros::Duration(nhPriv.param<float>("penalty_duration_secs", 1.0));
-  ros::Time last_penalty;
 
     struct sockaddr_rc loc_addr = { 0 }, rem_addr = { 0 };
     char buf[1024] = { 0 };
@@ -58,6 +54,9 @@ int main(int argc, char **argv)
     std_msgs::Bool connected_msg;
     connected_msg.data = false;
 
+    std_msgs::Byte data_msg;
+    data_msg.data = 0;
+
     while(ros::ok()) {
         int ret = poll(input_fds.data(), input_fds.size(), 500);
         if (input_fds[0].revents & POLLIN) {
@@ -66,30 +65,45 @@ int main(int argc, char **argv)
             client = accept(s, (struct sockaddr *)&rem_addr, &opt);
 
             ba2str( &rem_addr.rc_bdaddr, buf );
-            ROS_INFO("accepted connection from %s", buf);
-            memset(buf, 0, sizeof(buf));
+            ROS_INFO("accepted connection from %s (on fd %d)", buf, client);
+            
+            std::vector<pollfd> conn_fds;
+            conn_fds.push_back({client, POLLIN, 0});
+            
+            while (ros::ok()) {
+                int ret = poll(conn_fds.data(), conn_fds.size(), 500);
+                if (conn_fds[0].revents & POLLIN) {
 
-            // read data from the client
-            bytes_read = read(client, buf, sizeof(buf));
-            if( bytes_read > 0 ) {
-                ROS_INFO("received [%s]", buf);
-                if (!connected_msg.data) {
-                    ROS_INFO("connected");
-                    connected_msg.data = true;
-                    reward_connected.publish(connected_msg);
+                    memset(buf, 0, sizeof(buf));
+                    // read data from the client
+                    bytes_read = read(client, buf, sizeof(buf));
+                    if( bytes_read > 0 ) {
+                        if (!connected_msg.data) {
+                            ROS_INFO("connected");
+                            connected_msg.data = true;
+                            reward_connected.publish(connected_msg);
+                        }
+                        for (int i=0; i<bytes_read; i++) {
+                            if (buf[i]) {
+                                data_msg.data = buf[i];
+                                reward_pub.publish(data_msg);
+                            }
+                        }
+                        missed_intervals = 0;
+                    }
+                } else {
+                    missed_intervals++;
+                    if (missed_intervals >= MAX_MISSED_INTERVALS && connected_msg.data) {
+                        ROS_INFO("disconnected");
+                        connected_msg.data = false;
+                        reward_connected.publish(connected_msg);
+                        break;
+                    }
                 }
-                missed_intervals = 0;
+                ros::spinOnce();
             }
-
             // close connection
             close(client);
-        } else {
-            missed_intervals++;
-            if (missed_intervals >= MAX_MISSED_INTERVALS && connected_msg.data) {
-                ROS_INFO("disconnected");
-                connected_msg.data = false;
-                reward_connected.publish(connected_msg);
-            }
         }
         ros::spinOnce();
     }
