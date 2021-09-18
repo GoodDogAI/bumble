@@ -29,10 +29,8 @@
 #include <math.h>
 
 #define INPUT_BINDING_NAME "images"
-#define OUTPUT_BINDING_NAME1 "output"
-#define OUTPUT_BINDING_NAME2 "427"
-#define OUTPUT_BINDING_NAME3 "446"
-#define INTERMEDIATE_LAYER_BINDING_NAME "300"
+#define DETECTION_BINDING_NAME "output"
+#define INTERMEDIATE_LAYER_BINDING_NAME "361"
 
 #define MLP_INPUT_BINDING_NAME "yolo_intermediate"
 #define MLP_INPUT_SIZE 990
@@ -63,7 +61,6 @@ sensor_msgs::Imu last_head_orientation;
 mainbot::ODriveFeedback last_odrive_feedback;
 float last_vbus = 27.0f;
 
-inline float Logist(float data){ return 1.0f / (1.0f + expf(-data)); };
 
 template <typename T>
 struct TrtDestroyer
@@ -167,7 +164,7 @@ std::shared_ptr<nvinfer1::ICudaEngine> buildAndCacheEngine(const std::string& on
     // Set an optimiziation profile for any dynamic LSTM dimensions
     if (mlp_input_history_size > 0) {
         ROS_INFO("Adding optimization dimensions for MLP_INPUT_BINDING_NAME");
-        
+
         nvinfer1::IOptimizationProfile* profile = builder->createOptimizationProfile();
         profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kMIN, Dims3(1, 1, MLP_INPUT_SIZE));
         profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kOPT, Dims3(1, mlp_input_history_size, MLP_INPUT_SIZE));
@@ -209,30 +206,6 @@ std::shared_ptr<nvinfer1::ICudaEngine> buildAndCacheEngine(const std::string& on
 static constexpr int INPUT_H = 480;
 static constexpr int INPUT_W = 640;
 static constexpr int CLASS_NUM = 80;
-static constexpr int CHECK_COUNT = 3;
-
-struct YoloKernel
-{
-    int width;
-    int height;
-    float anchors[CHECK_COUNT*2];
-};
-
-static constexpr YoloKernel yolo1 = {
-    INPUT_W / 32,
-    INPUT_H / 32,
-    {116,90,  156,198,  373,326}
-};
-static constexpr YoloKernel yolo2 = {
-    INPUT_W / 16,
-    INPUT_H / 16,
-    {30,61,  62,45,  59,119}
-};
-static constexpr YoloKernel yolo3 = {
-    INPUT_W / 8,
-    INPUT_H / 8,
-    {10,13,  16,30,  33,23}
-};
 
 std::normal_distribution<float> normal_dist(0.0, 1.0);
 
@@ -247,53 +220,54 @@ std::vector<std::string> yolo_class_names = {
 };
 
 
-void detectBBoxes(const float* detectionOut, Dims dims, YoloKernel kernel) {
-    //NCHW format
-    for (int c = 0; c < CHECK_COUNT; c++) {
-        for (int row = 0; row < dims.d[2]; row++) {
-            for (int col = 0; col < dims.d[3]; col++) {
-                float box_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
-                                                        row * dims.d[3] * dims.d[4] +
-                                                        col * dims.d[4] +
-                                                        4]);
-                //std::cout << box_prob << std::endl;
+void detectBBoxes(const float* detectionOut, Dims dims) {
+    // Expected dims as [1, N, 85] standard detection bbox from a yolo network
+    // Format of the 85-tensor is [center x, center y, width, height,
+    //                            box_probability, person_probability, bicycle_probability..., toothbrush_probability]
 
-                if (box_prob < OBJECT_DETECTION_THRESHOLD) 
-                    continue;
+    for (int batch = 0; batch < dims.d[0]; batch++)
+    {
+        for (int row = 0; row < dims.d[1]; row++)
+        {
+            float box_prob = detectionOut[batch * dims.d[1] * dims.d[2] +
+                                          row * dims.d[2] +
+                                          4];
 
-                for (int obj_class = 0; obj_class < CLASS_NUM; obj_class++ ){
-                    float class_prob = Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
-                                                            row * dims.d[3] * dims.d[4] +
-                                                            col * dims.d[4] +
-                                                            5 + obj_class]);
+            if (box_prob < OBJECT_DETECTION_THRESHOLD)
+                continue;
 
-                    class_prob = class_prob * box_prob;                                                                
+            for (int obj_class = 0; obj_class < CLASS_NUM; obj_class++)
+            {
+                float class_prob = detectionOut[batch * dims.d[1] * dims.d[2] +
+                                                row * dims.d[2] +
+                                                5 + obj_class];
 
-                    if (class_prob >= OBJECT_DETECTION_THRESHOLD) {
-                        std::cout << "Found class " << yolo_class_names[obj_class] << c << std::endl;
-                        float x = (col - 0.5f + 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
-                                                        row * dims.d[3] * dims.d[4] +
-                                                        col * dims.d[4] +
-                                                        0])) * INPUT_W / kernel.width;
-                        float y = (row - 0.5f + 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
-                                                        row * dims.d[3] * dims.d[4] +
-                                                        col * dims.d[4] +
-                                                        1])) * INPUT_H / kernel.height;
-                        float width = 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
-                                                        row * dims.d[3] * dims.d[4] +
-                                                        col * dims.d[4] +
-                                                        2]);
-                        width = width * width * kernel.anchors[2*c];
-                        float height = 2.0f * Logist(detectionOut[c * dims.d[2] * dims.d[3] * dims.d[4] +
-                                                        row * dims.d[3] * dims.d[4] +
-                                                        col * dims.d[4] +
-                                                        3]);
-                        height = height * height * kernel.anchors[2*c + 1];
-                        std::cout << x << ", " << y << "  dims " << width << "x" << height << std::endl;
+                class_prob = class_prob * box_prob;
 
-                        // Not using opencv anymore, because it's dependency hell
-                        // cv::rectangle(cv_ptr->image, cv::Rect(x - width / 2,y - height / 2,width,height), CV_RGB(255,0,0));
-                    }                                                                
+                if (class_prob >= OBJECT_DETECTION_THRESHOLD)
+                {
+                    std::cout << "Found class " << yolo_class_names[obj_class] << std::endl;
+
+                    float cx = detectionOut[batch * dims.d[1] * dims.d[2] +
+                                            row * dims.d[2] +
+                                            0];
+
+                    float cy = detectionOut[batch * dims.d[1] * dims.d[2] +
+                                            row * dims.d[2] +
+                                            1];
+
+                    float w = detectionOut[batch * dims.d[1] * dims.d[2] +
+                                           row * dims.d[2] +
+                                           2];
+
+                    float h = detectionOut[batch * dims.d[1] * dims.d[2] +
+                                           row * dims.d[2] +
+                                           3];
+
+                    float x = cx - w / 2.0f;
+                    float y = cy - h / 2.0f;
+
+                    std::cout << x << ", " << y << "  dims " << w << "x" << h << std::endl;                                           
                 }
             }
         }
@@ -551,17 +525,10 @@ int main(int argc, char **argv)
         cudaStreamSynchronize(stream);
 
         //Read back the final classifications
-        const float* detectionOut1 = static_cast<const float*>(yoloBuffers.getHostBuffer(OUTPUT_BINDING_NAME1));
-        nvinfer1::Dims dims1 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME1));
-        detectBBoxes(detectionOut1, dims1, yolo1);
+        const float* detectionOut = static_cast<const float*>(yoloBuffers.getHostBuffer(DETECTION_BINDING_NAME));
+        nvinfer1::Dims detectionDims = mEngine->getBindingDimensions(mEngine->getBindingIndex(DETECTION_BINDING_NAME));
+        detectBBoxes(detectionOut, detectionDims);
 
-        const float* detectionOut2 = static_cast<const float*>(yoloBuffers.getHostBuffer(OUTPUT_BINDING_NAME2));
-        nvinfer1::Dims dims2 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME2));
-        detectBBoxes(detectionOut2, dims2, yolo2);
-
-        const float* detectionOut3 = static_cast<const float*>(yoloBuffers.getHostBuffer(OUTPUT_BINDING_NAME3));
-        nvinfer1::Dims dims3 = mEngine->getBindingDimensions(mEngine->getBindingIndex(OUTPUT_BINDING_NAME3));
-        detectBBoxes(detectionOut3, dims3, yolo3);
         
         // Prepare the intermediate outputs to use later
         const float* intermediateOut = static_cast<const float*>(yoloBuffers.getHostBuffer(INTERMEDIATE_LAYER_BINDING_NAME));

@@ -25,7 +25,7 @@
     <param name="update_rate" value="2.0"/>
 
     <!-- How much history to store and pass into a recurrent input component -->
-    <param name="mlp_input_history_size" value="240"/>
+    <param name="mlp_input_history_size" value="8"/>
 
     <!-- Set to true to output intermediate yolo outputs as ROS messages -->
     <param name="log_network_outputs" value="false"/>
