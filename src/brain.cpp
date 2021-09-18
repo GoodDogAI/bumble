@@ -120,7 +120,7 @@ std::shared_ptr<nvinfer1::ICudaEngine> loadEngine(const std::string& engine_path
                                                   samplesCommon::InferDeleter());
 }
 
-std::shared_ptr<nvinfer1::ICudaEngine> buildAndCacheEngine(const std::string& onnx_path, int32_t mlp_input_history_size) {
+std::shared_ptr<nvinfer1::ICudaEngine> buildAndCacheEngine(const std::string& onnx_path, int32_t mlp_input_history_size = -1) {
     auto builder = TrtUniquePtr<nvinfer1::IBuilder>(nvinfer1::createInferBuilder(gLogger));
     if (!builder)
     {
@@ -165,12 +165,16 @@ std::shared_ptr<nvinfer1::ICudaEngine> buildAndCacheEngine(const std::string& on
     config->setProfileStream(profileStream);
 
     // Set an optimiziation profile for any dynamic LSTM dimensions
-    nvinfer1::IOptimizationProfile* profile = builder->createOptimizationProfile();
-    profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kMIN, Dims3(1, 1, MLP_INPUT_SIZE));
-    profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kOPT, Dims3(1, mlp_input_history_size, MLP_INPUT_SIZE));
-    profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kMAX, Dims3(1, mlp_input_history_size, MLP_INPUT_SIZE));
+    if (mlp_input_history_size > 0) {
+        ROS_INFO("Adding optimization dimensions for MLP_INPUT_BINDING_NAME");
+        
+        nvinfer1::IOptimizationProfile* profile = builder->createOptimizationProfile();
+        profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kMIN, Dims3(1, 1, MLP_INPUT_SIZE));
+        profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kOPT, Dims3(1, mlp_input_history_size, MLP_INPUT_SIZE));
+        profile->setDimensions(MLP_INPUT_BINDING_NAME, OptProfileSelector::kMAX, Dims3(1, mlp_input_history_size, MLP_INPUT_SIZE));
 
-    config->addOptimizationProfile(profile);
+        config->addOptimizationProfile(profile);
+    }
 
     std::shared_ptr<nvinfer1::ICudaEngine> engine(builder->buildEngineWithConfig(*network, *config),
                                                   samplesCommon::InferDeleter());
