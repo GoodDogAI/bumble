@@ -1,7 +1,7 @@
 <launch>
   <arg name="yolo_checkpoint" default="yolov5s_v5_0_op11_rossac" />
-  <arg name="brain_checkpoint" default="sac-pleasant-frog-450-02048" />
-  <arg name="sampling_scale" default="0.2" />
+  <arg name="brain_checkpoint" default="sac-young-hippogriff-465-15872" />
+  <arg name="sampling_scale" default="0.0" />
  
   <include file="$(find mainbot)/config/odrive.launch"/>
   <include file="$(find mainbot)/config/audio.launch"/>

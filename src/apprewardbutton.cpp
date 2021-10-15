@@ -23,7 +23,7 @@ int main(int argc, char **argv)
   ros::Publisher reward_connected = n.advertise<std_msgs::Bool>("reward_button_connected", false);
 
     struct sockaddr_rc loc_addr = { 0 }, rem_addr = { 0 };
-    char buf[1024] = { 0 };
+    char buf[8] = { 0 };
     int s, client, bytes_read;
     socklen_t opt = sizeof(rem_addr);
 
@@ -83,12 +83,9 @@ int main(int argc, char **argv)
                             connected_msg.data = true;
                             reward_connected.publish(connected_msg);
                         }
-                        for (int i=0; i<bytes_read; i++) {
-                            if (buf[i]) {
-                                data_msg.data = buf[i];
-                                reward_pub.publish(data_msg);
-                            }
-                        }
+                        data_msg.data = buf[0];
+                        reward_pub.publish(data_msg);
+                        ROS_INFO("read [%d,%d,%d,%d, %d,%d, %d,%d]", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
                         missed_intervals = 0;
                     }
                 } else {

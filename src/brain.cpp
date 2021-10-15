@@ -34,6 +34,7 @@
 
 #define MLP_INPUT_BINDING_NAME "yolo_intermediate"
 #define MLP_INPUT_SIZE 990
+//#define MLP_INPUT_SIZE 5308
 #define MLP_OUTPUT_BINDING_NAME "actions"
 #define MLP_OUTPUT_STDDEV_BINDING_NAME "stddev"
 
@@ -568,8 +569,9 @@ int main(int argc, char **argv)
         mlp_input[10] = last_vbus - 27.0f;
     
         //Copy every 157st element into the SAC model
-        for (int i = 0; i < 979; i++) {
+        for (int i = 0; i < MLP_INPUT_SIZE - 11; i++) {
             mlp_input[11 + i] = intermediateOut[i * 157];
+            //mlp_input[11 + i] = intermediateOut[i * 29];
         }
 
         // Put the newly constructed observation into the mlp_input_history buffer
