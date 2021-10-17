@@ -1,5 +1,8 @@
 <launch>
   <node name="apprewardbutton" pkg="mainbot" type="apprewardbutton" required="true" output="screen">
     <param name="penalty_duration_secs" value="2"/>
+
+    <param name="override_linear_speed" value="0.5"/>
+    <param name="override_angular_speed" value="0.5"/>
   </node>
 </launch>

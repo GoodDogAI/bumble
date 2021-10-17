@@ -1,6 +1,8 @@
 #include "ros/ros.h"
 #include "std_msgs/Bool.h"
 #include "std_msgs/Byte.h"
+#include "std_msgs/Float32.h"
+#include "geometry_msgs/Twist.h"
 
 #include <unistd.h>
 #include <sys/socket.h>
@@ -10,17 +12,34 @@
 #include <vector>
 
 #define MAX_MISSED_INTERVALS 3
+#define BUF_CMD_VEL_OVERRIDE_INDEX 4
+#define BUF_CMD_VEL_ACTION_INDEX 5
+
+#define BUF_CMD_VEL_ACTION_FORWARD 1
+#define BUF_CMD_VEL_ACTION_BACKWARD 2
+#define BUF_CMD_VEL_ACTION_LEFT 4
+#define BUF_CMD_VEL_ACTION_RIGHT 8
+
 
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "rewardbutton");
+    ros::init(argc, argv, "rewardbutton");
 
+    ros::NodeHandle n;
+    ros::NodeHandle nhPriv("~");
 
-  ros::NodeHandle n;
-  ros::NodeHandle nhPriv("~");
+    float override_linear_speed = nhPriv.param<float>("override_linear_speed", 1.0);
+    float override_angular_speed = nhPriv.param<float>("override_angular_speed", 1.0);
 
-  ros::Publisher reward_pub = n.advertise<std_msgs::Byte>("reward_button", 0);
-  ros::Publisher reward_connected = n.advertise<std_msgs::Bool>("reward_button_connected", false);
+    ros::Publisher reward_pub = n.advertise<std_msgs::Float32>("reward_button", 0);
+    ros::Publisher reward_connected = n.advertise<std_msgs::Bool>("reward_button_connected", false);
+    ros::Publisher reward_cmd_vel_pub = n.advertise<geometry_msgs::Twist>("reward_button_cmd_vel", 0);
+
+    ros::Publisher reward_raw_pub = n.advertise<std_msgs::Byte>("reward_button_raw", 0);
+
+    ros::Duration penalty_duration = ros::Duration(nhPriv.param<float>("penalty_duration_secs", 1.0));
+    ros::Time last_penalty;
+
 
     struct sockaddr_rc loc_addr = { 0 }, rem_addr = { 0 };
     char buf[8] = { 0 };
@@ -84,8 +103,25 @@ int main(int argc, char **argv)
                             reward_connected.publish(connected_msg);
                         }
                         data_msg.data = buf[0];
-                        reward_pub.publish(data_msg);
+                        reward_raw_pub.publish(data_msg);
+
                         ROS_INFO("read [%d,%d,%d,%d, %d,%d, %d,%d]", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+
+                        geometry_msgs::Twist cmd_vel;
+                        if (buf[BUF_CMD_VEL_OVERRIDE_INDEX]) {
+                            if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_FORWARD)
+                                cmd_vel.linear.x = override_linear_speed;
+                            else if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_BACKWARD)
+                                cmd_vel.linear.x = -override_linear_speed;
+
+                            if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_LEFT)
+                                cmd_vel.angular.z = override_angular_speed;
+                            else if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_RIGHT)
+                                cmd_vel.angular.z= -override_angular_speed;
+                        }
+
+                        reward_cmd_vel_pub.publish(cmd_vel);
+
                         missed_intervals = 0;
                     }
                 } else {
@@ -107,5 +143,4 @@ int main(int argc, char **argv)
     
     close(s);
     return 0;
-
 }
