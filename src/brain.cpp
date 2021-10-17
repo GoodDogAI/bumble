@@ -62,8 +62,12 @@ sensor_msgs::Imu last_head_orientation;
 mainbot::ODriveFeedback last_odrive_feedback;
 float last_vbus = 27.0f;
 
-float external_reward = 0.0f;
+geometry_msgs::Twist last_internal_cmd_vel;
 geometry_msgs::Twist last_external_cmd_vel;
+geometry_msgs::Twist stopped_cmd_vel;
+
+bool external_reward_connected = false;
+float external_reward = 0.0f;
 bool use_external_cmd_vel = false;
 
 
@@ -346,6 +350,12 @@ void rewardButtonOverrideCmdVelCallback(const std_msgs::Bool& override)
     use_external_cmd_vel = override.data;
 }
 
+// Called when the reward button app either connects or disconnects from the robot
+void rewardButtonConnectedCallback(const std_msgs::Bool& override)
+{
+    external_reward_connected = override.data;
+}
+
 
 // Called when you receive a dynamixel current state message
 void dynamixelStateCallback(const dynamixel_workbench_msgs::DynamixelStateList& msg)
@@ -422,6 +432,7 @@ int main(int argc, char **argv)
   ros::Subscriber camera_sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
   
   ros::Subscriber reward_sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
+  ros::Subscriber reward_connected_sub = n.subscribe("/reward_button_connected", 1, rewardButtonConnectedCallback);
   ros::Subscriber reward_override_cmd_vel_pub = n.subscribe("/reward_button_override_cmd_vel", 1, rewardButtonOverrideCmdVelCallback);
   ros::Subscriber reward_cmd_vel_pub = n.subscribe("/reward_button_cmd_vel", 1, rewardButtonCmdVelCallback);
 
@@ -643,23 +654,10 @@ int main(int argc, char **argv)
                     "   pan: " << pan << "   tilt: " << tilt<<
                     "     stddevs: "  << actionsStdDev[0] << " " << actionsStdDev[1] << " " << actionsStdDev[2] << " " << actionsStdDev[3] <<  std::endl;
 
-        if (external_reward < 0.0f) {
-            speed = 0.0f;
-            ang = 0.0f;
 
-            pan = (pan_min + pan_max) / 2;
-            tilt = (tilt_min + tilt_max) / 2;
-        }
 
-        if (use_external_cmd_vel) {
-            cmd_vel_pub.publish(last_external_cmd_vel);
-        }
-        else {
-            geometry_msgs::Twist msg;
-            msg.linear.x = speed;
-            msg.angular.z = ang;
-            cmd_vel_pub.publish(msg);
-        }
+        last_internal_cmd_vel.linear.x = speed;
+        last_internal_cmd_vel.angular.z = ang;
 
         dynamixel_workbench_msgs::DynamixelCommand panMsg;
         panMsg.request.id = n.param<int>("/pan_tilt/pan_id", 1);
@@ -690,7 +688,6 @@ int main(int argc, char **argv)
                                                     mlpOutput + mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_OUTPUT_BINDING_NAME)).d[1]);
         brain_outputs_pub.publish(brain_outputs_msg);
 
-
         // Clear out the image pointer, so we don't reprocess this image anymore
         image_ptr = nullptr;
         std::cout << "Took " << ros::Time::now() - start << std::endl;          
@@ -698,6 +695,22 @@ int main(int argc, char **argv)
     else if (last_image_received > ros::Time(0) && ros::Time::now() - last_image_received > ros::Duration(1.0)) {
         ROS_ERROR("No image received in the last second, exiting");
         ros::shutdown();
+    }
+
+    if (use_external_cmd_vel) {
+        cmd_vel_pub.publish(last_external_cmd_vel);
+    }
+    else {
+        if (!external_reward_connected) {
+            cmd_vel_pub.publish(stopped_cmd_vel);
+            ROS_INFO("Connect the rewardbutton app on your phone to start robot");
+        }
+        else if (external_reward < 0.0f) {
+            cmd_vel_pub.publish(stopped_cmd_vel);
+        }
+        else {
+            cmd_vel_pub.publish(last_internal_cmd_vel);
+        }
     }
               
     ros::spinOnce();
