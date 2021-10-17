@@ -12,7 +12,14 @@
 #include <vector>
 
 #define MAX_MISSED_INTERVALS 3
-#define BUF_CMD_VEL_OVERRIDE_INDEX 4
+
+#define BUF_DISCRIMINANT_INDEX 4
+
+#define BUF_EMPTY_MESSAGE 0x00
+#define BUF_MOVE_MESSAGE 0x01
+#define BUF_SCORE_MESSAGE 0x02
+
+#define BUF_SCORE_INDEX 5
 #define BUF_CMD_VEL_ACTION_INDEX 5
 
 #define BUF_CMD_VEL_ACTION_FORWARD 1
@@ -39,8 +46,9 @@ int main(int argc, char **argv)
     ros::Publisher reward_raw_pub = n.advertise<std_msgs::Byte>("reward_button_raw", 0);
 
     ros::Duration penalty_duration = ros::Duration(nhPriv.param<float>("penalty_duration_secs", 1.0));
+    
     ros::Time last_penalty;
-
+    int8_t last_score_received = 0;
 
     struct sockaddr_rc loc_addr = { 0 }, rem_addr = { 0 };
     char buf[8] = { 0 };
@@ -112,7 +120,7 @@ int main(int argc, char **argv)
                         ROS_INFO("read [%d,%d,%d,%d, %d,%d, %d,%d]", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
 
 
-                        if (buf[BUF_CMD_VEL_OVERRIDE_INDEX]) {
+                        if (buf[BUF_DISCRIMINANT_INDEX] == BUF_MOVE_MESSAGE) {
                             geometry_msgs::Twist cmd_vel_msg;
 
                             if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_FORWARD)
@@ -128,11 +136,27 @@ int main(int argc, char **argv)
                             reward_cmd_vel_pub.publish(cmd_vel_msg);
                             override_cmd_vel_msg.data = true;
                         }
-                        else {
+                        else if (buf[BUF_DISCRIMINANT_INDEX] == BUF_SCORE_MESSAGE) {
+                            last_score_received = buf[BUF_SCORE_INDEX];
+                            ROS_INFO("Score %d detected from app", last_score_received);
+                            
+                            last_penalty = ros::Time::now();
+                        }
+                        else if (buf[BUF_DISCRIMINANT_INDEX] == BUF_EMPTY_MESSAGE) {
                             override_cmd_vel_msg.data = false;
                         }
+                        else {
+                            ROS_WARN("Unknown message recieved %x", buf[BUF_DISCRIMINANT_INDEX]);
+                        }
+
 
                         reward_override_cmd_vel_pub.publish(override_cmd_vel_msg);
+
+
+                        // Publish the latest value of the reward button
+                        std_msgs::Float32 reward;
+                        reward.data = (ros::Time::now() - last_penalty) > penalty_duration ? 0.0 : (float)last_score_received;
+                        reward_pub.publish(reward);
 
                         missed_intervals = 0;
                     }
