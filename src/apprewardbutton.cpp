@@ -33,6 +33,7 @@ int main(int argc, char **argv)
 
     ros::Publisher reward_pub = n.advertise<std_msgs::Float32>("reward_button", 0);
     ros::Publisher reward_connected = n.advertise<std_msgs::Bool>("reward_button_connected", false);
+    ros::Publisher reward_override_cmd_vel_pub = n.advertise<std_msgs::Bool>("reward_button_override_cmd_vel", 0);
     ros::Publisher reward_cmd_vel_pub = n.advertise<geometry_msgs::Twist>("reward_button_cmd_vel", 0);
 
     ros::Publisher reward_raw_pub = n.advertise<std_msgs::Byte>("reward_button_raw", 0);
@@ -73,6 +74,9 @@ int main(int argc, char **argv)
     std_msgs::Bool connected_msg;
     connected_msg.data = false;
 
+    std_msgs::Bool override_cmd_vel_msg;
+    override_cmd_vel_msg.data = false;
+
     std_msgs::Byte data_msg;
     data_msg.data = 0;
 
@@ -107,20 +111,28 @@ int main(int argc, char **argv)
 
                         ROS_INFO("read [%d,%d,%d,%d, %d,%d, %d,%d]", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
 
-                        geometry_msgs::Twist cmd_vel;
+
                         if (buf[BUF_CMD_VEL_OVERRIDE_INDEX]) {
+                            geometry_msgs::Twist cmd_vel_msg;
+
                             if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_FORWARD)
-                                cmd_vel.linear.x = override_linear_speed;
+                                cmd_vel_msg.linear.x = override_linear_speed;
                             else if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_BACKWARD)
-                                cmd_vel.linear.x = -override_linear_speed;
+                                cmd_vel_msg.linear.x = -override_linear_speed;
 
                             if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_LEFT)
-                                cmd_vel.angular.z = override_angular_speed;
+                                cmd_vel_msg.angular.z = override_angular_speed;
                             else if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_RIGHT)
-                                cmd_vel.angular.z= -override_angular_speed;
+                                cmd_vel_msg.angular.z = -override_angular_speed;
+                            
+                            reward_cmd_vel_pub.publish(cmd_vel_msg);
+                            override_cmd_vel_msg.data = true;
+                        }
+                        else {
+                            override_cmd_vel_msg.data = false;
                         }
 
-                        reward_cmd_vel_pub.publish(cmd_vel);
+                        reward_override_cmd_vel_pub.publish(override_cmd_vel_msg);
 
                         missed_intervals = 0;
                     }

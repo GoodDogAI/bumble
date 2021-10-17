@@ -1,6 +1,7 @@
 #include "ros/ros.h"
 
 #include "std_msgs/String.h"
+#include "std_msgs/Bool.h"
 #include "std_msgs/MultiArrayLayout.h"
 #include "std_msgs/MultiArrayDimension.h"
 #include "std_msgs/Float32.h"
@@ -56,11 +57,14 @@ using namespace nvinfer1;
 sensor_msgs::ImageConstPtr image_ptr;
 
 ros::Time last_image_received;
-float external_reward = 0.0f;
 dynamixel_workbench_msgs::DynamixelStateList last_dynamixel_msg;
 sensor_msgs::Imu last_head_orientation;
 mainbot::ODriveFeedback last_odrive_feedback;
 float last_vbus = 27.0f;
+
+float external_reward = 0.0f;
+geometry_msgs::Twist last_external_cmd_vel;
+bool use_external_cmd_vel = false;
 
 
 template <typename T>
@@ -330,6 +334,19 @@ void rewardButtonCallback(const std_msgs::Float32& rew)
   external_reward = rew.data;
 }
 
+// Called when the reward button wants to override the robot's heading
+void rewardButtonCmdVelCallback(const geometry_msgs::Twist& rew_cmd_vel)
+{
+    last_external_cmd_vel = rew_cmd_vel;
+}
+
+// Called when the reward button wants to override the robot's heading
+void rewardButtonOverrideCmdVelCallback(const std_msgs::Bool& override)
+{
+    use_external_cmd_vel = override.data;
+}
+
+
 // Called when you receive a dynamixel current state message
 void dynamixelStateCallback(const dynamixel_workbench_msgs::DynamixelStateList& msg)
 {
@@ -403,7 +420,11 @@ int main(int argc, char **argv)
   ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command", false);
 
   ros::Subscriber camera_sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
+  
   ros::Subscriber reward_sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
+  ros::Subscriber reward_override_cmd_vel_pub = n.subscribe("/reward_button_override_cmd_vel", 1, rewardButtonOverrideCmdVelCallback);
+  ros::Subscriber reward_cmd_vel_pub = n.subscribe("/reward_button_cmd_vel", 1, rewardButtonCmdVelCallback);
+
   ros::Subscriber dynamixel_state_sub = n.subscribe("/dynamixel_workbench/dynamixel_state", 1, dynamixelStateCallback);
   ros::Subscriber accel_sub = n.subscribe("/camera/accel/sample", 1, accelCallback);
   ros::Subscriber gyro_sub = n.subscribe("/camera/gyro/sample", 1, gyroCallback);
@@ -630,10 +651,15 @@ int main(int argc, char **argv)
             tilt = (tilt_min + tilt_max) / 2;
         }
 
-        geometry_msgs::Twist msg;
-        msg.linear.x = speed;
-        msg.angular.z = ang;
-        cmd_vel_pub.publish(msg);
+        if (use_external_cmd_vel) {
+            cmd_vel_pub.publish(last_external_cmd_vel);
+        }
+        else {
+            geometry_msgs::Twist msg;
+            msg.linear.x = speed;
+            msg.angular.z = ang;
+            cmd_vel_pub.publish(msg);
+        }
 
         dynamixel_workbench_msgs::DynamixelCommand panMsg;
         panMsg.request.id = n.param<int>("/pan_tilt/pan_id", 1);

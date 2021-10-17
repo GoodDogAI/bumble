@@ -8,7 +8,7 @@
   <include file="$(find mainbot)/config/pan_tilt_config.xml"/>
   <include file="$(find mainbot)/config/pan_tilt_controller.launch"/>
   <include file="$(find mainbot)/config/camera.launch"/>
-  <include file="$(find mainbot)/config/rewardbutton.launch"/>
+  <include file="$(find mainbot)/config/apprewardbutton.launch"/>
   <include file="$(find mainbot)/config/rosbag_capture.launch">
     <arg name="prefix" value="brain-$(arg brain_checkpoint)-samp$(arg sampling_scale)"/>
   </include>
