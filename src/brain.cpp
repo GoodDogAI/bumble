@@ -65,6 +65,7 @@ float last_vbus = 27.0f;
 geometry_msgs::Twist last_internal_cmd_vel;
 geometry_msgs::Twist last_external_cmd_vel;
 geometry_msgs::Twist stopped_cmd_vel;
+float last_internal_pan, last_internal_tilt;
 
 bool external_reward_connected = false;
 float external_reward = 0.0f;
@@ -658,25 +659,8 @@ int main(int argc, char **argv)
 
         last_internal_cmd_vel.linear.x = speed;
         last_internal_cmd_vel.angular.z = ang;
-
-        dynamixel_workbench_msgs::DynamixelCommand panMsg;
-        panMsg.request.id = n.param<int>("/pan_tilt/pan_id", 1);
-        panMsg.request.addr_name = "Goal_Position";
-        panMsg.request.value = pan;
-        pan_tilt_client.call(panMsg);
-
-        dynamixel_workbench_msgs::DynamixelCommand tiltMsg;
-        tiltMsg.request.id = n.param<int>("/pan_tilt/tilt_id", 2);
-        tiltMsg.request.addr_name = "Goal_Position";
-        tiltMsg.request.value = tilt;
-        pan_tilt_client.call(tiltMsg);
-
-        // Publish the feedback command of the pan/tilt so we can log it, otherwise ROS service parameters are not logged
-        mainbot::HeadFeedback feedback_msg;
-        feedback_msg.pan_command = pan;
-        feedback_msg.tilt_command = tilt;
-        feedback_msg.header.stamp = ros::Time::now();
-        feedback_pub.publish(feedback_msg);
+        last_internal_pan = pan;
+        last_internal_tilt = tilt;
 
         // Publish the brain IOs so we can make sure they match up with what we are passing in during training
         std_msgs::Float32MultiArray brain_inputs_msg;
@@ -697,22 +681,52 @@ int main(int argc, char **argv)
         ros::shutdown();
     }
 
+    float pan, tilt;
+
     if (use_external_cmd_vel) {
         cmd_vel_pub.publish(last_external_cmd_vel);
+        pan = (pan_min + pan_max) / 2;
+        tilt = (tilt_min + tilt_max) / 2;
     }
     else {
         if (!external_reward_connected) {
             cmd_vel_pub.publish(stopped_cmd_vel);
+            pan = (pan_min + pan_max) / 2;
+            tilt = tilt_max;
             ROS_INFO("Connect the rewardbutton app on your phone to start robot");
         }
         else if (external_reward < 0.0f) {
             cmd_vel_pub.publish(stopped_cmd_vel);
+            pan = last_internal_pan;
+            tilt = last_internal_tilt;
         }
         else {
             cmd_vel_pub.publish(last_internal_cmd_vel);
+            pan = last_internal_pan;
+            tilt = last_internal_tilt;
         }
     }
-              
+
+    // Write the output to the head
+    dynamixel_workbench_msgs::DynamixelCommand panMsg;
+    panMsg.request.id = n.param<int>("/pan_tilt/pan_id", 1);
+    panMsg.request.addr_name = "Goal_Position";
+    panMsg.request.value = pan;
+    pan_tilt_client.call(panMsg);
+
+    dynamixel_workbench_msgs::DynamixelCommand tiltMsg;
+    tiltMsg.request.id = n.param<int>("/pan_tilt/tilt_id", 2);
+    tiltMsg.request.addr_name = "Goal_Position";
+    tiltMsg.request.value = tilt;
+    pan_tilt_client.call(tiltMsg);
+
+    // Publish the feedback command of the pan/tilt so we can log it, otherwise ROS service parameters are not logged
+    mainbot::HeadFeedback feedback_msg;
+    feedback_msg.pan_command = pan;
+    feedback_msg.tilt_command = tilt;
+    feedback_msg.header.stamp = ros::Time::now();
+    feedback_pub.publish(feedback_msg);
+
     ros::spinOnce();
     loop_rate.sleep();
 
