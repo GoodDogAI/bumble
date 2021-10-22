@@ -697,8 +697,8 @@ int main(int argc, char **argv)
         }
         else if (external_reward < 0.0f) {
             cmd_vel_pub.publish(stopped_cmd_vel);
-            pan = last_internal_pan;
-            tilt = last_internal_tilt;
+            pan = (pan_min + pan_max) / 2;
+            tilt = tilt_min;
         }
         else {
             cmd_vel_pub.publish(last_internal_cmd_vel);
