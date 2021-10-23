@@ -699,6 +699,7 @@ int main(int argc, char **argv)
             cmd_vel_pub.publish(stopped_cmd_vel);
             pan = (pan_min + pan_max) / 2;
             tilt = tilt_min;
+            ROS_INFO("Punish button pressed, robot stopped");
         }
         else {
             cmd_vel_pub.publish(last_internal_cmd_vel);
