@@ -13,12 +13,148 @@
 #include <errno.h> // Error integer and strerror() function
 #include <termios.h> // Contains POSIX terminal control definitions
 #include <unistd.h> // write(), read(), close()
+#include <sys/poll.h> // For reading from the serial port without blocking
 #include <math.h>
 
 
 ros::Time last_received;
 static volatile bool motors_enabled;
 
+typedef struct {
+  uint8_t command_id;
+  uint8_t payload_size;
+  uint8_t checksum;
+} bgc_header;
+
+typedef struct {
+  uint8_t start;
+  bgc_header header;
+  uint8_t payload[];
+  uint8_t crc[2];
+} bgc_msg;
+
+#define CMD_READ_PARAMS  82
+#define CMD_WRITE_PARAMS  87
+#define CMD_REALTIME_DATA  68
+#define CMD_BOARD_INFO  86
+#define CMD_CALIB_ACC  65
+#define CMD_CALIB_GYRO  103
+#define CMD_CALIB_EXT_GAIN  71
+#define CMD_USE_DEFAULTS  70
+#define CMD_CALIB_POLES  80
+#define CMD_RESET  114
+#define CMD_HELPER_DATA 72
+#define CMD_CALIB_OFFSET  79
+#define CMD_CALIB_BAT  66
+#define CMD_MOTORS_ON   77
+#define CMD_MOTORS_OFF  109
+#define CMD_CONTROL   67
+#define CMD_TRIGGER_PIN  84
+#define CMD_EXECUTE_MENU 69
+#define CMD_GET_ANGLES  73
+#define CMD_CONFIRM  67
+#define CMD_BOARD_INFO_3  20
+#define CMD_READ_PARAMS_3 21
+#define CMD_WRITE_PARAMS_3 22
+#define CMD_REALTIME_DATA_3  23
+#define CMD_REALTIME_DATA_4  25
+#define CMD_SELECT_IMU_3 24
+#define CMD_READ_PROFILE_NAMES 28
+#define CMD_WRITE_PROFILE_NAMES 29
+#define CMD_QUEUE_PARAMS_INFO_3 30
+#define CMD_SET_ADJ_VARS_VAL 31
+#define CMD_SAVE_PARAMS_3 32
+#define CMD_READ_PARAMS_EXT 33
+#define CMD_WRITE_PARAMS_EXT 34
+#define CMD_AUTO_PID 35
+#define CMD_SERVO_OUT 36
+#define CMD_I2C_WRITE_REG_BUF 39
+#define CMD_I2C_READ_REG_BUF 40
+#define CMD_WRITE_EXTERNAL_DATA 41
+#define CMD_READ_EXTERNAL_DATA 42
+#define CMD_READ_ADJ_VARS_CFG 43
+#define CMD_WRITE_ADJ_VARS_CFG 44
+#define CMD_API_VIRT_CH_CONTROL 45
+#define CMD_ADJ_VARS_STATE 46
+#define CMD_EEPROM_WRITE 47
+#define CMD_EEPROM_READ 48
+#define CMD_CALIB_INFO 49
+#define CMD_SIGN_MESSAGE 50
+#define CMD_BOOT_MODE_3 51
+#define CMD_SYSTEM_STATE 52
+#define CMD_READ_FILE 53
+#define CMD_WRITE_FILE 54
+#define CMD_FS_CLEAR_ALL 55
+#define CMD_AHRS_HELPER 56
+#define CMD_RUN_SCRIPT 57
+#define CMD_SCRIPT_DEBUG 58
+#define CMD_CALIB_MAG 59
+#define CMD_GET_ANGLES_EXT 61
+#define CMD_READ_PARAMS_EXT2 62
+#define CMD_WRITE_PARAMS_EXT2 63
+#define CMD_GET_ADJ_VARS_VAL 64
+#define CMD_CALIB_MOTOR_MAG_LINK 74
+#define CMD_GYRO_CORRECTION 75
+#define CMD_DATA_STREAM_INTERVAL 85
+#define CMD_REALTIME_DATA_CUSTOM 88
+#define CMD_BEEP_SOUND 89
+#define CMD_ENCODERS_CALIB_OFFSET_4  26
+#define CMD_ENCODERS_CALIB_FLD_OFFSET_4 27
+#define CMD_CONTROL_CONFIG 90
+#define CMD_CALIB_ORIENT_CORR 91
+#define CMD_COGGING_CALIB_INFO 92
+#define CMD_CALIB_COGGING 93
+#define CMD_CALIB_ACC_EXT_REF 94
+#define CMD_PROFILE_SET 95
+#define CMD_CAN_DEVICE_SCAN 96
+#define CMD_CAN_DRV_HARD_PARAMS 97
+#define CMD_CAN_DRV_STATE 98
+#define CMD_CAN_DRV_CALIBRATE 99
+#define CMD_READ_RC_INPUTS 100
+#define CMD_REALTIME_DATA_CAN_DRV 101
+#define CMD_EVENT 102
+#define CMD_READ_PARAMS_EXT3 104
+#define CMD_WRITE_PARAMS_EXT3 105
+#define CMD_EXT_IMU_DEBUG_INFO 106
+#define CMD_SET_DEVICE_ADDR 107
+#define CMD_AUTO_PID2 108
+#define CMD_EXT_IMU_CMD 110
+#define CMD_READ_STATE_VARS 111
+#define CMD_WRITE_STATE_VARS 112
+#define CMD_SERIAL_PROXY 113
+#define CMD_IMU_ADVANCED_CALIB 115
+#define CMD_API_VIRT_CH_HIGH_RES 116
+#define CMD_SET_DEBUG_PORT 249
+#define CMD_MAVLINK_INFO 250
+#define CMD_MAVLINK_DEBUG 251
+#define CMD_DEBUG_VARS_INFO_3 253
+#define CMD_DEBUG_VARS_3 254
+#define CMD_ERROR  255
+
+void crc16_update(uint16_t length, uint8_t *data, uint8_t crc[2]) {
+  uint16_t counter;
+  uint16_t polynom = 0x8005;
+  uint16_t crc_register = (uint16_t)crc[0] | ((uint16_t)crc[1] << 8);
+  uint8_t shift_register;
+  uint8_t data_bit, crc_bit;
+  for (counter = 0; counter < length; counter++) {
+    for (shift_register = 0x01; shift_register > 0x00; shift_register <<= 1) {
+      data_bit = (data[counter] & shift_register) ? 1 : 0;
+      crc_bit = crc_register >> 15;
+      crc_register <<= 1;
+
+      if (data_bit != crc_bit) crc_register ^= polynom;
+    }
+  }
+
+  crc[0] = crc_register;
+  crc[1] = (crc_register >> 8);
+}
+
+void crc16_calculate(uint16_t length, uint8_t *data, uint8_t crc[2]) {
+  crc[0] = 0; crc[1] = 0;
+  crc16_update(length, data, crc);
+}
 
 /**
  * This node provides a simple interface to the ODrive module, it accepts cmd_vel messages to drive the motors,
@@ -66,22 +202,62 @@ int main(int argc, char **argv)
       return errno;
   }
 
+  ROS_INFO("Opened SimpleBGC serial port %s", nhPriv.param<std::string>("serial_port", "/dev/ttyACM0").c_str());
+
+  uint8_t payload_size = 2;
+
+  bgc_msg *cmd_board_info = (bgc_msg *)malloc(sizeof(bgc_msg) + payload_size);
+  cmd_board_info->start = 0x24;
+  cmd_board_info->header.command_id = CMD_BOARD_INFO;
+  cmd_board_info->header.payload_size = payload_size;
+  cmd_board_info->header.checksum = cmd_board_info->header.command_id + cmd_board_info->header.payload_size;
+  cmd_board_info->payload[0] = 0x00;
+  cmd_board_info->payload[1] = 0x00;
+
+  crc16_calculate(sizeof(bgc_msg) + payload_size, (uint8_t *)cmd_board_info, cmd_board_info->crc);
+
+
+  pollfd serial_port_poll = {serial_port, POLLIN, 0};
 
   while (ros::ok())
   {
     ros::Time start = ros::Time::now();
 
+    // Continue sending the board info command until we get a response
+    write(serial_port, cmd_board_info, sizeof(bgc_msg) + payload_size);
+
+
+    ROS_INFO("Sent message %02x %02x %02x %02x %02x %02x %02x %02x",
+      ((uint8_t *)cmd_board_info)[0],
+      ((uint8_t *)cmd_board_info)[1],
+      ((uint8_t *)cmd_board_info)[2],
+      ((uint8_t *)cmd_board_info)[3],
+      ((uint8_t *)cmd_board_info)[4],
+      ((uint8_t *)cmd_board_info)[5],
+      ((uint8_t *)cmd_board_info)[6],
+      ((uint8_t *)cmd_board_info)[7]);
+
+    int ret = poll(&serial_port_poll, 1, 500);
+    
+    if (serial_port_poll.revents & POLLIN) {
+      uint8_t buf[256];
+      ssize_t bytes_read = read(serial_port, buf, sizeof(buf));
+
+      ROS_INFO("Read %ld bytes", bytes_read);
+    }
+
+
     // If you haven't received a message in the last second, then stop the motors
     if (ros::Time::now() - last_received > ros::Duration(1)) {
       if (motors_enabled) {
-        ROS_WARN("Didn't receive a message for the past second, shutting down motors");
+        ROS_WARN("Didn't receive a message for the past second, shutting down BGC");
         motors_enabled = false;
 
       }
     } 
     else {
       if (!motors_enabled) {
-        ROS_INFO("Received message, enabling motors");
+        ROS_INFO("Received ROS message, enabling BGC");
         motors_enabled = true;
 
       }
