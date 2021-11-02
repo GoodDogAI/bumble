@@ -1,0 +1,5 @@
+<launch>
+  <node name="simplebgc" pkg="bumble" type="simplebgc" required="true" output="screen">
+    <param name="serial_port" value="/dev/ttyTHS0"/>
+  </node>
+</launch>

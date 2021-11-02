@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <string>
 
 // Linux headers for opening serial port connections to the ODRIVE
 #include <fcntl.h> // Contains file controls like O_RDWR
@@ -136,7 +137,7 @@ int main(int argc, char **argv)
 
   ros::Rate loop_rate(10);
 
-  int serial_port = open("/dev/ttyACM0", O_RDWR);
+  int serial_port = open(nhPriv.param<std::string>("serial_port", "/dev/ttyACM0").c_str(), O_RDWR);
 
   if (serial_port < 0) {
       ROS_ERROR("Error %i from open: %s\n", errno, strerror(errno));

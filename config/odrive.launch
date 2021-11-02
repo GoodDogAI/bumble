@@ -1,5 +1,6 @@
 <launch>
   <node name="odrive" pkg="bumble" type="odrive" required="true" output="screen">
+    <param name="serial_port" value="/dev/ttyACM0"/>
     <param name="max_speed" value="2.0"/>
   </node>
 </launch>

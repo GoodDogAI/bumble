@@ -149,6 +149,7 @@ include_directories(
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/bumble_node.cpp)
 add_executable(odrive src/odrive.cpp)
+add_executable(simplebgc src/simplebgc.cpp)
 add_executable(randomwalk src/randomwalk.cpp)
 add_executable(apprewardbutton src/apprewardbutton.cpp)
 add_executable(audiostreamer src/audiostreamer.cpp)
@@ -172,6 +173,9 @@ set_property(TARGET brain PROPERTY CXX_STANDARD 17)
 #   ${catkin_LIBRARIES}
 # )
 target_link_libraries(odrive
+  ${catkin_LIBRARIES}
+)
+target_link_libraries(simplebgc
   ${catkin_LIBRARIES}
 )
 target_link_libraries(randomwalk
