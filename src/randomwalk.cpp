@@ -88,7 +88,8 @@ int main(int argc, char **argv)
       head_tilt = TILT_DIST(gen);
       recalc_means = ros::Time::now();
 
-      sendDynamixelCommands(pan_tilt_client, head_pan, head_tilt);
+      // TODO Send to new pan tilt gimbal system
+      //sendDynamixelCommands(pan_tilt_client, head_pan, head_tilt);
     } 
     else if (external_reward < 0.0f) {
       // Stop external motion if you got a negative reward
@@ -100,7 +101,8 @@ int main(int argc, char **argv)
 
       recalc_means = ros::Time::now();
 
-      sendDynamixelCommands(pan_tilt_client, head_pan, head_tilt);
+      // TODO Send to new pan tilt gimbal system
+      //sendDynamixelCommands(pan_tilt_client, head_pan, head_tilt);
     }
 
     geometry_msgs::Twist msg;
