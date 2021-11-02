@@ -20,17 +20,13 @@
 ros::Time last_received;
 static volatile bool motors_enabled;
 
+static const uint8_t simplebgc_start_byte = 0x24;
+
 typedef struct {
   uint8_t command_id;
   uint8_t payload_size;
-  uint8_t checksum;
-} bgc_header;
-
-typedef struct {
-  uint8_t start;
-  bgc_header header;
+  uint8_t header_checksum;
   uint8_t payload[];
-  uint8_t crc[2];
 } bgc_msg;
 
 #define CMD_READ_PARAMS  82
@@ -207,14 +203,14 @@ int main(int argc, char **argv)
   uint8_t payload_size = 2;
 
   bgc_msg *cmd_board_info = (bgc_msg *)malloc(sizeof(bgc_msg) + payload_size);
-  cmd_board_info->start = 0x24;
-  cmd_board_info->header.command_id = CMD_BOARD_INFO;
-  cmd_board_info->header.payload_size = payload_size;
-  cmd_board_info->header.checksum = cmd_board_info->header.command_id + cmd_board_info->header.payload_size;
+  cmd_board_info->command_id = CMD_BOARD_INFO;
+  cmd_board_info->payload_size = payload_size;
+  cmd_board_info->header_checksum = cmd_board_info->command_id + cmd_board_info->payload_size;
   cmd_board_info->payload[0] = 0x00;
   cmd_board_info->payload[1] = 0x00;
 
-  crc16_calculate(sizeof(bgc_msg) + payload_size, (uint8_t *)cmd_board_info, cmd_board_info->crc);
+  uint8_t crc[2];
+  crc16_calculate(sizeof(bgc_msg) + payload_size, (uint8_t *)cmd_board_info, crc);
 
 
   pollfd serial_port_poll = {serial_port, POLLIN, 0};
@@ -224,26 +220,30 @@ int main(int argc, char **argv)
     ros::Time start = ros::Time::now();
 
     // Continue sending the board info command until we get a response
+    write(serial_port, &simplebgc_start_byte, 1);
     write(serial_port, cmd_board_info, sizeof(bgc_msg) + payload_size);
+    write(serial_port, crc, sizeof(crc));
 
 
-    ROS_INFO("Sent message %02x %02x %02x %02x %02x %02x %02x %02x",
+    ROS_INFO("Sent message size %zu - %02x %02x %02x %02x %02x %02x\tCRC %02x %02x",
+      sizeof(bgc_msg) + payload_size,
       ((uint8_t *)cmd_board_info)[0],
       ((uint8_t *)cmd_board_info)[1],
       ((uint8_t *)cmd_board_info)[2],
       ((uint8_t *)cmd_board_info)[3],
       ((uint8_t *)cmd_board_info)[4],
       ((uint8_t *)cmd_board_info)[5],
-      ((uint8_t *)cmd_board_info)[6],
-      ((uint8_t *)cmd_board_info)[7]);
+      crc[0],
+      crc[1]);
 
     int ret = poll(&serial_port_poll, 1, 500);
     
     if (serial_port_poll.revents & POLLIN) {
+      ROS_INFO("POLL for serial port POLLIN");
       uint8_t buf[256];
       ssize_t bytes_read = read(serial_port, buf, sizeof(buf));
 
-      ROS_INFO("Read %ld bytes", bytes_read);
+      ROS_INFO("Read %zu bytes", bytes_read);
     }
 
 
