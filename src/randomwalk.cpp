@@ -2,8 +2,7 @@
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
 #include "geometry_msgs/Twist.h"
-#include "dynamixel_workbench_msgs/DynamixelCommand.h"
-#include "mainbot/HeadFeedback.h"
+#include "bumble/HeadFeedback.h"
 
 #include <iostream>
 #include <fstream>
@@ -25,19 +24,6 @@ void rewardButtonCallback(const std_msgs::Float32& rew)
   external_reward = rew.data;
 }
 
-void sendDynamixelCommands(ros::ServiceClient &pan_tilt_client, float head_pan, float head_tilt){ 
-   dynamixel_workbench_msgs::DynamixelCommand panMsg;
-    panMsg.request.id = pan_id;
-    panMsg.request.addr_name = "Goal_Position";
-    panMsg.request.value = head_pan;
-    pan_tilt_client.call(panMsg);
-
-    dynamixel_workbench_msgs::DynamixelCommand tiltMsg;
-    tiltMsg.request.id = tilt_id;
-    tiltMsg.request.addr_name = "Goal_Position";
-    tiltMsg.request.value = head_tilt;
-    pan_tilt_client.call(tiltMsg);
-}
 
 /**
  * This code just drive the robot around randomly, for the purposes of initializing reinforcement learning training.
@@ -74,12 +60,12 @@ int main(int argc, char **argv)
   tilt_id = n.param<int>("/pan_tilt/tilt_id", 2);
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 2);
-  ros::Publisher feedback_pub = n.advertise<mainbot::HeadFeedback>("head_feedback", 2);
+  ros::Publisher feedback_pub = n.advertise<bumble::HeadFeedback>("head_feedback", 2);
 
   ros::Subscriber sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
 
 
-  ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command");
+  //ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command");
 
   ros::Rate loop_rate(20);
 
@@ -124,7 +110,7 @@ int main(int argc, char **argv)
     cmd_vel_pub.publish(msg);
 
     // Publish the feedback command of the pan/tilt so we can log it, otherwise ROS service parameters are not logged
-    mainbot::HeadFeedback feedback_msg;
+    bumble::HeadFeedback feedback_msg;
     feedback_msg.pan_command = head_pan;
     feedback_msg.tilt_command = head_tilt;
     feedback_msg.header.stamp = ros::Time::now();

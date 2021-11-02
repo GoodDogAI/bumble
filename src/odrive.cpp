@@ -2,7 +2,7 @@
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
 #include "geometry_msgs/Twist.h"
-#include "mainbot/ODriveFeedback.h"
+#include "bumble/ODriveFeedback.h"
 
 #include <iostream>
 #include <fstream>
@@ -132,7 +132,7 @@ int main(int argc, char **argv)
   last_received = ros::Time::now();
 
   ros::Publisher vbus_pub = n.advertise<std_msgs::Float32>("vbus", 10);
-  ros::Publisher feedback_pub = n.advertise<mainbot::ODriveFeedback>("odrive_feedback", 5);
+  ros::Publisher feedback_pub = n.advertise<bumble::ODriveFeedback>("odrive_feedback", 5);
 
   ros::Rate loop_rate(10);
 
@@ -229,7 +229,7 @@ int main(int argc, char **argv)
     }
 
     // Read and publish the motor feedback values
-    mainbot::ODriveFeedback feedback_msg;
+    bumble::ODriveFeedback feedback_msg;
     send_raw_command(serial_port, "f 0\n"); 
     feedback_msg.motor_pos_actual_0 = std::stof(read_string(serial_port));
     feedback_msg.motor_vel_actual_0 = std::stof(read_string(serial_port));

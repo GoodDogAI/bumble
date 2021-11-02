@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(mainbot)
+project(bumble)
 
 ## Compile as C++17, supported in ROS Kinetic and newer
 add_compile_options(-std=c++17)
@@ -81,7 +81,7 @@ add_message_files(
 generate_messages(
   DEPENDENCIES
   std_msgs
-  mainbot
+  bumble
 )
 
 ################################################
@@ -115,7 +115,7 @@ generate_messages(
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
 #  INCLUDE_DIRS include
-#  LIBRARIES mainbot
+#  LIBRARIES bumble
 #  CATKIN_DEPENDS roscpp std_msgs
    CATKIN_DEPENDS message_runtime
 #  DEPENDS CUDA
@@ -136,7 +136,7 @@ include_directories(
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
-#   src/${PROJECT_NAME}/mainbot.cpp
+#   src/${PROJECT_NAME}/bumble.cpp
 # )
 
 ## Add cmake target dependencies of the library
@@ -147,7 +147,7 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-# add_executable(${PROJECT_NAME}_node src/mainbot_node.cpp)
+# add_executable(${PROJECT_NAME}_node src/bumble_node.cpp)
 add_executable(odrive src/odrive.cpp)
 add_executable(randomwalk src/randomwalk.cpp)
 add_executable(apprewardbutton src/apprewardbutton.cpp)
@@ -245,7 +245,7 @@ target_link_libraries(brain
 #############
 
 ## Add gtest based cpp test target and link libraries
-# catkin_add_gtest(${PROJECT_NAME}-test test/test_mainbot.cpp)
+# catkin_add_gtest(${PROJECT_NAME}-test test/test_bumble.cpp)
 # if(TARGET ${PROJECT_NAME}-test)
 #   target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME})
 # endif()

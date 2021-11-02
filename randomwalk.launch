@@ -1,15 +1,15 @@
 <launch>
-  <include file="$(find mainbot)/config/odrive.launch"/>
-  <include file="$(find mainbot)/config/audio.launch"/>
-  <include file="$(find mainbot)/config/pan_tilt_config.xml"/>
-  <include file="$(find mainbot)/config/pan_tilt_controller.launch"/>
-  <include file="$(find mainbot)/config/camera.launch"/>
-  <include file="$(find mainbot)/config/rewardbutton.launch"/>
-  <include file="$(find mainbot)/config/rosbag_capture.launch">
+  <include file="$(find bumble)/config/odrive.launch"/>
+  <include file="$(find bumble)/config/audio.launch"/>
+  <include file="$(find bumble)/config/pan_tilt_config.xml"/>
+  <include file="$(find bumble)/config/pan_tilt_controller.launch"/>
+  <include file="$(find bumble)/config/camera.launch"/>
+  <include file="$(find bumble)/config/rewardbutton.launch"/>
+  <include file="$(find bumble)/config/rosbag_capture.launch">
     <arg name="prefix" value="randomwalk"/>
   </include>
 
-  <node name="randomwalk" pkg="mainbot" type="randomwalk"
+  <node name="randomwalk" pkg="bumble" type="randomwalk"
         required="true" output="screen">
        <param name="change_frequency_secs" value="2.0"/>
 

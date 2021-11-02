@@ -10,10 +10,8 @@
 #include "sensor_msgs/image_encodings.h"
 #include "sensor_msgs/Imu.h"
 #include "geometry_msgs/Twist.h"
-#include "dynamixel_workbench_msgs/DynamixelCommand.h"
-#include "dynamixel_workbench_msgs/DynamixelStateList.h"
-#include "mainbot/HeadFeedback.h"
-#include "mainbot/ODriveFeedback.h"
+#include "bumble/HeadFeedback.h"
+#include "bumble/ODriveFeedback.h"
 
 #include <boost/make_shared.hpp>
 
@@ -57,9 +55,8 @@ using namespace nvinfer1;
 sensor_msgs::ImageConstPtr image_ptr;
 
 ros::Time last_image_received;
-dynamixel_workbench_msgs::DynamixelStateList last_dynamixel_msg;
 sensor_msgs::Imu last_head_orientation;
-mainbot::ODriveFeedback last_odrive_feedback;
+bumble::ODriveFeedback last_odrive_feedback;
 float last_vbus = 27.0f;
 
 geometry_msgs::Twist last_internal_cmd_vel;
@@ -359,14 +356,14 @@ void rewardButtonConnectedCallback(const std_msgs::Bool& override)
 
 
 // Called when you receive a dynamixel current state message
-void dynamixelStateCallback(const dynamixel_workbench_msgs::DynamixelStateList& msg)
-{
-    assert(msg.dynamixel_state.size() == 2);
-    assert(msg.dynamixel_state[0].name == "pan");
-    assert(msg.dynamixel_state[1].name == "tilt");
+// void dynamixelStateCallback(const dynamixel_workbench_msgs::DynamixelStateList& msg)
+// {
+//     assert(msg.dynamixel_state.size() == 2);
+//     assert(msg.dynamixel_state[0].name == "pan");
+//     assert(msg.dynamixel_state[1].name == "tilt");
 
-    last_dynamixel_msg = msg;
-}
+//     last_dynamixel_msg = msg;
+// }
 
 // Called when you receive an accelerometer message from the real sense camera
 void accelCallback(const sensor_msgs::Imu& msg) 
@@ -385,7 +382,7 @@ void gyroCallback(const sensor_msgs::Imu& msg)
 }
 
 // Called you when receive informatiom about the current state of the motors via the Odrive interface
-void oDriveCallback(const mainbot::ODriveFeedback& msg)
+void oDriveCallback(const bumble::ODriveFeedback& msg)
 {
     last_odrive_feedback = msg;
 }
@@ -416,7 +413,7 @@ int main(int argc, char **argv)
   ros::NodeHandle nhPriv("~");
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
-  ros::Publisher feedback_pub = n.advertise<mainbot::HeadFeedback>("head_feedback", 5);
+  ros::Publisher feedback_pub = n.advertise<bumble::HeadFeedback>("head_feedback", 5);
 
   // Publishes intermedia debug messages for verifying proper operation. 
   // Typically you would not enable this, because the bag recording will have trouble keeping up
@@ -428,7 +425,7 @@ int main(int argc, char **argv)
 
   // true marks the service as persistent, which greatly improves performance
   // TODO: However, it appears that it doesn't work right?
-  ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command", false);
+  //ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command", false);
 
   ros::Subscriber camera_sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
   
@@ -437,7 +434,7 @@ int main(int argc, char **argv)
   ros::Subscriber reward_override_cmd_vel_pub = n.subscribe("/reward_button_override_cmd_vel", 1, rewardButtonOverrideCmdVelCallback);
   ros::Subscriber reward_cmd_vel_pub = n.subscribe("/reward_button_cmd_vel", 1, rewardButtonCmdVelCallback);
 
-  ros::Subscriber dynamixel_state_sub = n.subscribe("/dynamixel_workbench/dynamixel_state", 1, dynamixelStateCallback);
+  //ros::Subscriber dynamixel_state_sub = n.subscribe("/dynamixel_workbench/dynamixel_state", 1, dynamixelStateCallback);
   ros::Subscriber accel_sub = n.subscribe("/camera/accel/sample", 1, accelCallback);
   ros::Subscriber gyro_sub = n.subscribe("/camera/gyro/sample", 1, gyroCallback);
   ros::Subscriber odrive_feedback_sub = n.subscribe("/odrive_feedback", 1, oDriveCallback);
@@ -581,8 +578,11 @@ int main(int argc, char **argv)
         std::vector<float> mlp_input = std::vector<float>(MLP_INPUT_SIZE, 0.0);
 
         // Normalized pan and tilt, current orientation
-        mlp_input[0] = normalize_output(last_dynamixel_msg.dynamixel_state[0].present_position, pan_min, pan_max);
-        mlp_input[1] = normalize_output(last_dynamixel_msg.dynamixel_state[1].present_position, tilt_min, tilt_max);
+        // TODO
+        mlp_input[0] = 0.0f;
+        mlp_input[1] = 0.0f;
+        // mlp_input[0] = normalize_output(last_dynamixel_msg.dynamixel_state[0].present_position, pan_min, pan_max);
+        // mlp_input[1] = normalize_output(last_dynamixel_msg.dynamixel_state[1].present_position, tilt_min, tilt_max);
 
         // Head gyro
         mlp_input[2] = last_head_orientation.angular_velocity.x / 10.0f;
@@ -709,20 +709,20 @@ int main(int argc, char **argv)
     }
 
     // Write the output to the head
-    dynamixel_workbench_msgs::DynamixelCommand panMsg;
-    panMsg.request.id = n.param<int>("/pan_tilt/pan_id", 1);
-    panMsg.request.addr_name = "Goal_Position";
-    panMsg.request.value = pan;
-    pan_tilt_client.call(panMsg);
+    // dynamixel_workbench_msgs::DynamixelCommand panMsg;
+    // panMsg.request.id = n.param<int>("/pan_tilt/pan_id", 1);
+    // panMsg.request.addr_name = "Goal_Position";
+    // panMsg.request.value = pan;
+    // pan_tilt_client.call(panMsg);
 
-    dynamixel_workbench_msgs::DynamixelCommand tiltMsg;
-    tiltMsg.request.id = n.param<int>("/pan_tilt/tilt_id", 2);
-    tiltMsg.request.addr_name = "Goal_Position";
-    tiltMsg.request.value = tilt;
-    pan_tilt_client.call(tiltMsg);
+    // dynamixel_workbench_msgs::DynamixelCommand tiltMsg;
+    // tiltMsg.request.id = n.param<int>("/pan_tilt/tilt_id", 2);
+    // tiltMsg.request.addr_name = "Goal_Position";
+    // tiltMsg.request.value = tilt;
+    // pan_tilt_client.call(tiltMsg);
 
     // Publish the feedback command of the pan/tilt so we can log it, otherwise ROS service parameters are not logged
-    mainbot::HeadFeedback feedback_msg;
+    bumble::HeadFeedback feedback_msg;
     feedback_msg.pan_command = pan;
     feedback_msg.tilt_command = tilt;
     feedback_msg.header.stamp = ros::Time::now();

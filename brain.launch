@@ -3,18 +3,16 @@
   <arg name="brain_checkpoint" default="sac-young-hippogriff-465-15872" />
   <arg name="sampling_scale" default="0.0" />
  
-  <include file="$(find mainbot)/config/odrive.launch"/>
-  <include file="$(find mainbot)/config/audio.launch"/>
-  <include file="$(find mainbot)/config/pan_tilt_config.xml"/>
-  <include file="$(find mainbot)/config/pan_tilt_controller.launch"/>
-  <include file="$(find mainbot)/config/camera.launch"/>
-  <include file="$(find mainbot)/config/apprewardbutton.launch"/>
-  <include file="$(find mainbot)/config/rosbag_capture.launch">
+  <include file="$(find bumble)/config/odrive.launch"/>
+  <include file="$(find bumble)/config/audio.launch"/>
+  <include file="$(find bumble)/config/camera.launch"/>
+  <include file="$(find bumble)/config/apprewardbutton.launch"/>
+  <include file="$(find bumble)/config/rosbag_capture.launch">
     <arg name="prefix" value="brain-$(arg brain_checkpoint)-samp$(arg sampling_scale)"/>
   </include>
 
   
-  <node name="brain" pkg="mainbot" type="brain" required="true" output="screen">
+  <node name="brain" pkg="bumble" type="brain" required="true" output="screen">
     <param name="tensorrt_yolo" value="/home/robot/$(arg yolo_checkpoint).onnx"/>
     <param name="tensorrt_brain" value="/home/robot/$(arg brain_checkpoint).onnx"/>
 
