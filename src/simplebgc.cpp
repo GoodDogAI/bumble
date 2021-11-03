@@ -152,6 +152,29 @@ void crc16_calculate(uint16_t length, uint8_t *data, uint8_t crc[2]) {
   crc16_update(length, data, crc);
 }
 
+void tty_raw(struct termios *raw) {
+  /* input modes - clear indicated ones giving: no break, no CR to NL, 
+      no parity check, no strip char, no start/stop output (sic) control */
+  raw->c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+
+  /* output modes - clear giving: no post processing such as NL to CR+NL */
+  raw->c_oflag &= ~(OPOST);
+
+  /* control modes - set 8 bit chars */
+  raw->c_cflag |= (CS8);
+
+  /* local modes - clear giving: echoing off, canonical off (no erase with 
+      backspace, ^U,...),  no extended functions, no signal chars (^Z,^C) */
+  raw->c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+
+  /* control chars - set return condition: min number of bytes and timer */
+  raw->c_cc[VMIN] = 5; raw->c_cc[VTIME] = 8; /* after 5 bytes or .8 seconds
+                                              after first byte seen      */
+  raw->c_cc[VMIN] = 0; raw->c_cc[VTIME] = 0; /* immediate - anything       */
+  raw->c_cc[VMIN] = 2; raw->c_cc[VTIME] = 0; /* after two bytes, no timer  */
+  raw->c_cc[VMIN] = 0; raw->c_cc[VTIME] = 8; /* after a byte or .8 seconds */
+}
+
 /**
  * This node provides a simple interface to the ODrive module, it accepts cmd_vel messages to drive the motors,
  and publishes /vbus to report the current battery voltage
@@ -173,7 +196,7 @@ int main(int argc, char **argv)
 
   ros::Rate loop_rate(10);
 
-  int serial_port = open(nhPriv.param<std::string>("serial_port", "/dev/ttyACM0").c_str(), O_RDWR);
+  int serial_port = open(nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str(), O_RDWR | O_NOCTTY);
 
   if (serial_port < 0) {
       ROS_ERROR("Error %i from open: %s\n", errno, strerror(errno));
@@ -191,6 +214,7 @@ int main(int argc, char **argv)
 
   cfsetispeed(&tty, B115200);
   cfsetospeed(&tty, B115200);
+  tty_raw(&tty);
 
   // Save tty settings, also checking for error
   if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
@@ -198,20 +222,19 @@ int main(int argc, char **argv)
       return errno;
   }
 
-  ROS_INFO("Opened SimpleBGC serial port %s", nhPriv.param<std::string>("serial_port", "/dev/ttyACM0").c_str());
+  ROS_INFO("Opened SimpleBGC serial port %s", nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str());
 
-  uint8_t payload_size = 2;
+  uint8_t payload_size = 0;
 
   bgc_msg *cmd_board_info = (bgc_msg *)malloc(sizeof(bgc_msg) + payload_size);
-  cmd_board_info->command_id = CMD_BOARD_INFO;
+  cmd_board_info->command_id = CMD_MOTORS_ON;
   cmd_board_info->payload_size = payload_size;
   cmd_board_info->header_checksum = cmd_board_info->command_id + cmd_board_info->payload_size;
-  cmd_board_info->payload[0] = 0x00;
-  cmd_board_info->payload[1] = 0x00;
+  // cmd_board_info->payload[0] = 0x00;
+  // cmd_board_info->payload[1] = 0x00;
 
   uint8_t crc[2];
   crc16_calculate(sizeof(bgc_msg) + payload_size, (uint8_t *)cmd_board_info, crc);
-
 
   pollfd serial_port_poll = {serial_port, POLLIN, 0};
 
@@ -219,49 +242,60 @@ int main(int argc, char **argv)
   {
     ros::Time start = ros::Time::now();
 
+    // Write basic CMD_BOARD_INFO command to serial port
+    uint8_t get_board_info[7];
+    get_board_info[0] = 0x24;
+    get_board_info[1] = CMD_MOTORS_OFF;
+    get_board_info[2] = 0x01;
+    get_board_info[3] = CMD_MOTORS_OFF + 0x01;
+    get_board_info[4] = 0x00;
+
+    crc16_calculate(4, get_board_info + 1, get_board_info + 5);
+    // get_board_info[4] = 0xE6;
+    // get_board_info[5] = 0x13;
+    ssize_t written = write(serial_port, get_board_info, 7);
+
     // Continue sending the board info command until we get a response
-    write(serial_port, &simplebgc_start_byte, 1);
-    write(serial_port, cmd_board_info, sizeof(bgc_msg) + payload_size);
-    write(serial_port, crc, sizeof(crc));
+    // write(serial_port, &simplebgc_start_byte, 1);
+    // write(serial_port, cmd_board_info, sizeof(bgc_msg) + payload_size);
+    // write(serial_port, crc, sizeof(crc));
 
+    // ROS_INFO("Sent message size %zu - %02x %02x %02x %02x %02x\tCRC %02x %02x",
+    //   sizeof(bgc_msg) + payload_size,
+    //   ((uint8_t *)cmd_board_info)[0],
+    //   ((uint8_t *)cmd_board_info)[1],
+    //   ((uint8_t *)cmd_board_info)[2],
+    //   ((uint8_t *)cmd_board_info)[3],
+    //   ((uint8_t *)cmd_board_info)[4],
+    //   crc[0],
+    //   crc[1]);
 
-    ROS_INFO("Sent message size %zu - %02x %02x %02x %02x %02x %02x\tCRC %02x %02x",
-      sizeof(bgc_msg) + payload_size,
-      ((uint8_t *)cmd_board_info)[0],
-      ((uint8_t *)cmd_board_info)[1],
-      ((uint8_t *)cmd_board_info)[2],
-      ((uint8_t *)cmd_board_info)[3],
-      ((uint8_t *)cmd_board_info)[4],
-      ((uint8_t *)cmd_board_info)[5],
-      crc[0],
-      crc[1]);
-
-    int ret = poll(&serial_port_poll, 1, 500);
+    // int ret = poll(&serial_port_poll, 1, 500);
     
-    if (serial_port_poll.revents & POLLIN) {
-      ROS_INFO("POLL for serial port POLLIN");
-      uint8_t buf[256];
-      ssize_t bytes_read = read(serial_port, buf, sizeof(buf));
+    // if (serial_port_poll.revents & POLLIN) {
+    //   ROS_INFO("POLL for serial port POLLIN");
+    //   uint8_t buf[256];
+    //   ssize_t bytes_read = read(serial_port, buf, sizeof(buf));
 
-      ROS_INFO("Read %zu bytes", bytes_read);
-    }
+    //   ROS_INFO("Read %zu bytes", bytes_read);
+    // }
 
 
-    // If you haven't received a message in the last second, then stop the motors
-    if (ros::Time::now() - last_received > ros::Duration(1)) {
-      if (motors_enabled) {
-        ROS_WARN("Didn't receive a message for the past second, shutting down BGC");
-        motors_enabled = false;
+    // // If you haven't received a message in the last second, then stop the motors
+    // if (ros::Time::now() - last_received > ros::Duration(1)) {
+    //   if (motors_enabled) {
+    //     ROS_WARN("Didn't receive a message for the past second, shutting down BGC");
+    //     motors_enabled = false;
 
-      }
-    } 
-    else {
-      if (!motors_enabled) {
-        ROS_INFO("Received ROS message, enabling BGC");
-        motors_enabled = true;
+    //   }
+    // } 
+    // else {
+    //   if (!motors_enabled) {
+    //     ROS_INFO("Received ROS message, enabling BGC");
+    //     motors_enabled = true;
 
-      }
-    }
+    //   }
+    // }
 
     ros::spinOnce();
     loop_rate.sleep();
