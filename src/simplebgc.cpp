@@ -37,7 +37,7 @@ typedef struct {
   uint8_t payload[];
 } bgc_msg;
 
-typedef struct {
+typedef struct __attribute__((__packed__)){
   uint8_t board_ver;
   uint16_t firmware_ver;
   
@@ -56,7 +56,7 @@ typedef struct {
   uint16_t base_frw_ver;
 } bgc_board_info;
 
-typedef struct {
+typedef struct __attribute__((__packed__)) {
   int16_t acc_roll;
   int16_t gyro_roll;
   int16_t acc_pitch;
@@ -67,11 +67,14 @@ typedef struct {
   uint16_t serial_err_cnt;
   uint16_t system_error;
   uint8_t system_sub_error;
-  uint8_t reserved[3];
+  uint8_t reserved_0;
+  uint8_t reserved_1;
+  uint8_t reserved_2;
 
   int16_t rc_roll;
   int16_t rc_pitch;
   int16_t rc_yaw;
+
   int16_t rc_cmd;
 
   int16_t ext_fc_roll;
@@ -404,8 +407,10 @@ int main(int argc, char **argv)
 
             if (bgc_rx_msg->command_id == CMD_REALTIME_DATA_3) {
               bgc_realtime_data_3 *realtime_data = (bgc_realtime_data_3 *)bgc_rx_msg->payload;
-              ROS_INFO("%d %d %d", realtime_data->motor_power_pitch, realtime_data->motor_power_roll, realtime_data->motor_power_yaw);
-              ROS_INFO("%d %d", realtime_data->imu_angle_pitch, realtime_data->imu_angle_yaw);
+              //ROS_INFO("%d %d %d", realtime_data->motor_power_pitch, realtime_data->motor_power_roll, realtime_data->motor_power_yaw);
+              //ROS_INFO("%d %d", realtime_data->imu_angle_pitch, realtime_data->imu_angle_yaw);
+              
+              ROS_INFO("Battery voltage %f V %d", realtime_data->bat_level * 0.01, sizeof(bgc_realtime_data_3));
             }
           }
 
