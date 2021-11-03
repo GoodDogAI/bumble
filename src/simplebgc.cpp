@@ -270,15 +270,15 @@ int main(int argc, char **argv)
     //   crc[0],
     //   crc[1]);
 
-    // int ret = poll(&serial_port_poll, 1, 500);
+    int ret = poll(&serial_port_poll, 1, 500);
     
-    // if (serial_port_poll.revents & POLLIN) {
-    //   ROS_INFO("POLL for serial port POLLIN");
-    //   uint8_t buf[256];
-    //   ssize_t bytes_read = read(serial_port, buf, sizeof(buf));
+    if (serial_port_poll.revents & POLLIN) {
+      ROS_INFO("POLL for serial port POLLIN");
+      uint8_t buf[256];
+      ssize_t bytes_read = read(serial_port, buf, sizeof(buf));
 
-    //   ROS_INFO("Read %zu bytes", bytes_read);
-    // }
+      ROS_INFO("Read %zu bytes", bytes_read);
+    }
 
 
     // // If you haven't received a message in the last second, then stop the motors
