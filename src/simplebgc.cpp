@@ -168,12 +168,29 @@ void tty_raw(struct termios *raw) {
   raw->c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
 
   /* control chars - set return condition: min number of bytes and timer */
-  raw->c_cc[VMIN] = 5; raw->c_cc[VTIME] = 8; /* after 5 bytes or .8 seconds
-                                              after first byte seen      */
+  // raw->c_cc[VMIN] = 5; raw->c_cc[VTIME] = 8; /* after 5 bytes or .8 seconds
+  //                                             after first byte seen      */
   raw->c_cc[VMIN] = 0; raw->c_cc[VTIME] = 0; /* immediate - anything       */
-  raw->c_cc[VMIN] = 2; raw->c_cc[VTIME] = 0; /* after two bytes, no timer  */
-  raw->c_cc[VMIN] = 0; raw->c_cc[VTIME] = 8; /* after a byte or .8 seconds */
+  // raw->c_cc[VMIN] = 2; raw->c_cc[VTIME] = 0; /* after two bytes, no timer  */
+  // raw->c_cc[VMIN] = 0; raw->c_cc[VTIME] = 8; /* after a byte or .8 seconds */
 }
+
+void send_message(int fd, uint8_t cmd, uint8_t *payload, uint16_t payload_size) {
+  bgc_msg *cmd_msg = (bgc_msg *)malloc(sizeof(bgc_msg) + payload_size);
+  cmd_msg->command_id = cmd;
+  cmd_msg->payload_size = payload_size;
+  cmd_msg->header_checksum = cmd_msg->command_id + cmd_msg->payload_size;
+
+  memcpy(cmd_msg->payload, payload, payload_size);
+  
+  uint8_t crc[2];
+  crc16_calculate(sizeof(bgc_msg) + payload_size, (uint8_t *)cmd_msg, crc);
+
+  write(fd, &simplebgc_start_byte, 1);
+  write(fd, cmd_msg, sizeof(bgc_msg) + payload_size);
+  write(fd, crc, sizeof(crc));
+}
+
 
 /**
  * This node provides a simple interface to the ODrive module, it accepts cmd_vel messages to drive the motors,
@@ -224,51 +241,18 @@ int main(int argc, char **argv)
 
   ROS_INFO("Opened SimpleBGC serial port %s", nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str());
 
-  uint8_t payload_size = 0;
-
-  bgc_msg *cmd_board_info = (bgc_msg *)malloc(sizeof(bgc_msg) + payload_size);
-  cmd_board_info->command_id = CMD_MOTORS_ON;
-  cmd_board_info->payload_size = payload_size;
-  cmd_board_info->header_checksum = cmd_board_info->command_id + cmd_board_info->payload_size;
-  // cmd_board_info->payload[0] = 0x00;
-  // cmd_board_info->payload[1] = 0x00;
-
-  uint8_t crc[2];
-  crc16_calculate(sizeof(bgc_msg) + payload_size, (uint8_t *)cmd_board_info, crc);
-
+ 
   pollfd serial_port_poll = {serial_port, POLLIN, 0};
 
   while (ros::ok())
   {
     ros::Time start = ros::Time::now();
 
-    // Write basic CMD_BOARD_INFO command to serial port
-    uint8_t get_board_info[7];
-    get_board_info[0] = 0x24;
-    get_board_info[1] = CMD_MOTORS_OFF;
-    get_board_info[2] = 0x01;
-    get_board_info[3] = CMD_MOTORS_OFF + 0x01;
-    get_board_info[4] = 0x00;
-
-    crc16_calculate(4, get_board_info + 1, get_board_info + 5);
-    // get_board_info[4] = 0xE6;
-    // get_board_info[5] = 0x13;
-    ssize_t written = write(serial_port, get_board_info, 7);
-
     // Continue sending the board info command until we get a response
-    // write(serial_port, &simplebgc_start_byte, 1);
-    // write(serial_port, cmd_board_info, sizeof(bgc_msg) + payload_size);
-    // write(serial_port, crc, sizeof(crc));
-
-    // ROS_INFO("Sent message size %zu - %02x %02x %02x %02x %02x\tCRC %02x %02x",
-    //   sizeof(bgc_msg) + payload_size,
-    //   ((uint8_t *)cmd_board_info)[0],
-    //   ((uint8_t *)cmd_board_info)[1],
-    //   ((uint8_t *)cmd_board_info)[2],
-    //   ((uint8_t *)cmd_board_info)[3],
-    //   ((uint8_t *)cmd_board_info)[4],
-    //   crc[0],
-    //   crc[1]);
+    uint8_t board_info_payload[2];
+    board_info_payload[0] = 0x00;
+    board_info_payload[1] = 0x00;
+    send_message(serial_port, CMD_BOARD_INFO, board_info_payload, 2);
 
     int ret = poll(&serial_port_poll, 1, 500);
     
@@ -280,8 +264,7 @@ int main(int argc, char **argv)
       ROS_INFO("Read %zu bytes", bytes_read);
     }
 
-
-    // // If you haven't received a message in the last second, then stop the motors
+    // If you haven't received a message in the last second, then stop the motors
     // if (ros::Time::now() - last_received > ros::Duration(1)) {
     //   if (motors_enabled) {
     //     ROS_WARN("Didn't receive a message for the past second, shutting down BGC");
