@@ -17,10 +17,18 @@
 #include <math.h>
 
 
-ros::Time last_received;
-static volatile bool motors_enabled;
-
 static const uint8_t simplebgc_start_byte = 0x24;
+
+#define BGC_WAITING_FOR_START_BYTE 0
+#define BGC_READ_COMMAND_ID 1
+#define BGC_READ_PAYLOAD_SIZE 2
+#define BGC_READ_HEADER_CHECKSUM 3
+#define BGC_READ_PAYLOAD 4
+#define BGC_READ_CRC_0 5
+#define BGC_READ_CRC_1 6
+
+#define BGC_RX_BUFFER_SIZE 256
+
 
 typedef struct {
   uint8_t command_id;
@@ -28,6 +36,27 @@ typedef struct {
   uint8_t header_checksum;
   uint8_t payload[];
 } bgc_msg;
+
+typedef struct {
+  uint8_t board_ver;
+  uint16_t firmware_ver;
+  
+  uint8_t state_flag_debug_mode : 1;
+  uint8_t state_flag_is_frame_inverted : 1;
+  uint8_t state_flag_init_step1_done : 1;
+  uint8_t state_flag_init_step2_done : 1;
+  uint8_t state_flag_startup_auto_routine_done : 1;
+  uint8_t state_flag_rest : 3;
+
+  uint16_t board_features;
+  uint8_t connection_flag;
+  uint32_t frw_extra_id;
+  uint16_t board_features_ext;
+  uint8_t reserved[3];
+  uint16_t base_frw_ver;
+} bgc_board_info;
+
+
 
 #define CMD_READ_PARAMS  82
 #define CMD_WRITE_PARAMS  87
@@ -127,6 +156,13 @@ typedef struct {
 #define CMD_DEBUG_VARS_3 254
 #define CMD_ERROR  255
 
+ros::Time last_received;
+static volatile bool motors_enabled;
+static uint8_t bgc_state = BGC_WAITING_FOR_START_BYTE;
+static uint8_t bgc_payload_counter = 0;
+static uint8_t bgc_payload_crc[2];
+static uint8_t bgc_rx_buffer[BGC_RX_BUFFER_SIZE];
+
 void crc16_update(uint16_t length, uint8_t *data, uint8_t crc[2]) {
   uint16_t counter;
   uint16_t polynom = 0x8005;
@@ -206,7 +242,6 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
   ros::NodeHandle nhPriv("~");
 
-  
   // Set the last message received time so we know if we stop getting messages and have to 
   // shut down the motors.
   last_received = ros::Time::now();
@@ -257,11 +292,69 @@ int main(int argc, char **argv)
     int ret = poll(&serial_port_poll, 1, 500);
     
     if (serial_port_poll.revents & POLLIN) {
-      ROS_INFO("POLL for serial port POLLIN");
       uint8_t buf[256];
       ssize_t bytes_read = read(serial_port, buf, sizeof(buf));
 
-      ROS_INFO("Read %zu bytes", bytes_read);
+      if (bytes_read < 0) {
+        ROS_ERROR("Error %i from read: %s\n", errno, strerror(errno));
+        return errno;
+      }
+      else {
+        ROS_INFO("Read %zu bytes", bytes_read);
+      }
+
+      for (ssize_t i = 0; i < bytes_read; i++) {
+        if (bgc_state == BGC_WAITING_FOR_START_BYTE && buf[i] == simplebgc_start_byte) {
+          bgc_state = BGC_READ_COMMAND_ID;
+        }
+        else if (bgc_state == BGC_READ_COMMAND_ID) {
+          ((bgc_msg *)bgc_rx_buffer)->command_id = buf[i];
+          bgc_state = BGC_READ_PAYLOAD_SIZE;
+        }
+        else if (bgc_state == BGC_READ_PAYLOAD_SIZE) {
+          ((bgc_msg *)bgc_rx_buffer)->payload_size = buf[i];
+          bgc_state = BGC_READ_HEADER_CHECKSUM;
+        }
+        else if (bgc_state == BGC_READ_HEADER_CHECKSUM) {
+          ((bgc_msg *)bgc_rx_buffer)->header_checksum = buf[i];
+
+          if (((bgc_msg *)bgc_rx_buffer)->header_checksum != ((bgc_msg *)bgc_rx_buffer)->command_id + ((bgc_msg *)bgc_rx_buffer)->payload_size) {
+            ROS_ERROR("Header checksum failed");
+            bgc_state = BGC_WAITING_FOR_START_BYTE;
+          }
+          else {
+            bgc_state = BGC_READ_PAYLOAD;
+            bgc_payload_counter = 0;
+          }
+        }
+        else if (bgc_state == BGC_READ_PAYLOAD) {
+          ((bgc_msg *)bgc_rx_buffer)->payload[bgc_payload_counter] = buf[i];
+          bgc_payload_counter++;
+
+          if (bgc_payload_counter == ((bgc_msg *)bgc_rx_buffer)->payload_size) {
+            bgc_state = BGC_READ_CRC_0;
+          }
+        }
+        else if (bgc_state == BGC_READ_CRC_0) {
+          bgc_payload_crc[0] = buf[i];
+          bgc_state = BGC_READ_CRC_1;
+        }
+        else if (bgc_state == BGC_READ_CRC_1) {
+          bgc_payload_crc[1] = buf[i];
+
+          uint8_t crc[2];
+          crc16_calculate(sizeof(bgc_msg) + ((bgc_msg *)bgc_rx_buffer)->payload_size, bgc_rx_buffer, crc);
+
+          if (crc[0] != bgc_payload_crc[0] || crc[1] != bgc_payload_crc[1]) {
+            ROS_ERROR("Payload checksum failed");
+          }
+          else {
+            ROS_INFO("Recieved valid message of type %d", ((bgc_msg *)bgc_rx_buffer)->command_id);
+          }
+
+          bgc_state = BGC_WAITING_FOR_START_BYTE;
+        }
+      }
     }
 
     // If you haven't received a message in the last second, then stop the motors
