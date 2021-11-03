@@ -56,6 +56,53 @@ typedef struct {
   uint16_t base_frw_ver;
 } bgc_board_info;
 
+typedef struct {
+  int16_t acc_roll;
+  int16_t gyro_roll;
+  int16_t acc_pitch;
+  int16_t gyro_pitch;
+  int16_t acc_yaw;
+  int16_t gyro_yaw;
+
+  uint16_t serial_err_cnt;
+  uint16_t system_error;
+  uint8_t system_sub_error;
+  uint8_t reserved[3];
+
+  int16_t rc_roll;
+  int16_t rc_pitch;
+  int16_t rc_yaw;
+  int16_t rc_cmd;
+
+  int16_t ext_fc_roll;
+  int16_t ext_fc_pitch;
+
+  int16_t imu_angle_roll;
+  int16_t imu_angle_pitch;
+  int16_t imu_angle_yaw;
+
+  int16_t frame_imu_angle_roll;
+  int16_t frame_imu_angle_pitch;
+  int16_t frame_imu_angle_yaw;
+
+  int16_t target_imu_angle_roll;
+  int16_t target_imu_angle_pitch;
+  int16_t target_imu_angle_yaw;
+
+  uint16_t cycle_time;
+  uint16_t i2c_error_count;
+
+  uint8_t deprecated_1;
+  uint16_t bat_level;
+  uint8_t rt_data_flags;
+  uint8_t cur_imu;
+  uint8_t cur_profile;
+
+  uint8_t motor_power_roll;
+  uint8_t motor_power_pitch;
+  uint8_t motor_power_yaw;
+} bgc_realtime_data_3;
+
 
 
 #define CMD_READ_PARAMS  82
@@ -162,6 +209,7 @@ static uint8_t bgc_state = BGC_WAITING_FOR_START_BYTE;
 static uint8_t bgc_payload_counter = 0;
 static uint8_t bgc_payload_crc[2];
 static uint8_t bgc_rx_buffer[BGC_RX_BUFFER_SIZE];
+static bgc_msg * const bgc_rx_msg = (bgc_msg *)bgc_rx_buffer;
 
 void crc16_update(uint16_t length, uint8_t *data, uint8_t crc[2]) {
   uint16_t counter;
@@ -284,12 +332,15 @@ int main(int argc, char **argv)
     ros::Time start = ros::Time::now();
 
     // Continue sending the board info command until we get a response
-    uint8_t board_info_payload[2];
-    board_info_payload[0] = 0x00;
-    board_info_payload[1] = 0x00;
-    send_message(serial_port, CMD_BOARD_INFO, board_info_payload, 2);
+    // uint8_t board_info_payload[2];
+    // board_info_payload[0] = 0x00;
+    // board_info_payload[1] = 0x00;
+    // send_message(serial_port, CMD_BOARD_INFO, board_info_payload, 2);
+    
+    // Send a request for realtime data
+    send_message(serial_port, CMD_REALTIME_DATA_3, NULL, 0);
 
-    int ret = poll(&serial_port_poll, 1, 500);
+    int ret = poll(&serial_port_poll, 1, 5);
     
     if (serial_port_poll.revents & POLLIN) {
       uint8_t buf[256];
@@ -308,17 +359,17 @@ int main(int argc, char **argv)
           bgc_state = BGC_READ_COMMAND_ID;
         }
         else if (bgc_state == BGC_READ_COMMAND_ID) {
-          ((bgc_msg *)bgc_rx_buffer)->command_id = buf[i];
+          bgc_rx_msg->command_id = buf[i];
           bgc_state = BGC_READ_PAYLOAD_SIZE;
         }
         else if (bgc_state == BGC_READ_PAYLOAD_SIZE) {
-          ((bgc_msg *)bgc_rx_buffer)->payload_size = buf[i];
+          bgc_rx_msg->payload_size = buf[i];
           bgc_state = BGC_READ_HEADER_CHECKSUM;
         }
         else if (bgc_state == BGC_READ_HEADER_CHECKSUM) {
-          ((bgc_msg *)bgc_rx_buffer)->header_checksum = buf[i];
+          bgc_rx_msg->header_checksum = buf[i];
 
-          if (((bgc_msg *)bgc_rx_buffer)->header_checksum != ((bgc_msg *)bgc_rx_buffer)->command_id + ((bgc_msg *)bgc_rx_buffer)->payload_size) {
+          if (bgc_rx_msg->header_checksum != bgc_rx_msg->command_id + bgc_rx_msg->payload_size) {
             ROS_ERROR("Header checksum failed");
             bgc_state = BGC_WAITING_FOR_START_BYTE;
           }
@@ -328,10 +379,10 @@ int main(int argc, char **argv)
           }
         }
         else if (bgc_state == BGC_READ_PAYLOAD) {
-          ((bgc_msg *)bgc_rx_buffer)->payload[bgc_payload_counter] = buf[i];
+          bgc_rx_msg->payload[bgc_payload_counter] = buf[i];
           bgc_payload_counter++;
 
-          if (bgc_payload_counter == ((bgc_msg *)bgc_rx_buffer)->payload_size) {
+          if (bgc_payload_counter == bgc_rx_msg->payload_size) {
             bgc_state = BGC_READ_CRC_0;
           }
         }
@@ -343,13 +394,19 @@ int main(int argc, char **argv)
           bgc_payload_crc[1] = buf[i];
 
           uint8_t crc[2];
-          crc16_calculate(sizeof(bgc_msg) + ((bgc_msg *)bgc_rx_buffer)->payload_size, bgc_rx_buffer, crc);
+          crc16_calculate(sizeof(bgc_msg) + bgc_rx_msg->payload_size, bgc_rx_buffer, crc);
 
           if (crc[0] != bgc_payload_crc[0] || crc[1] != bgc_payload_crc[1]) {
             ROS_ERROR("Payload checksum failed");
           }
           else {
-            ROS_INFO("Recieved valid message of type %d", ((bgc_msg *)bgc_rx_buffer)->command_id);
+            ROS_INFO("Recieved valid message of type %d", bgc_rx_msg->command_id);
+
+            if (bgc_rx_msg->command_id == CMD_REALTIME_DATA_3) {
+              bgc_realtime_data_3 *realtime_data = (bgc_realtime_data_3 *)bgc_rx_msg->payload;
+              ROS_INFO("%d %d %d", realtime_data->motor_power_pitch, realtime_data->motor_power_roll, realtime_data->motor_power_yaw);
+              ROS_INFO("%d %d", realtime_data->imu_angle_pitch, realtime_data->imu_angle_yaw);
+            }
           }
 
           bgc_state = BGC_WAITING_FOR_START_BYTE;
