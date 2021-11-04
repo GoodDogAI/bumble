@@ -107,9 +107,9 @@ void head_cmd_callback(const bumble::HeadCommand::ConstPtr& msg)
   control_data.angle_yaw = round(DEG_TO_INT16(msg->cmd_angle_yaw));
   send_message(serial_port, CMD_CONTROL, (uint8_t *)&control_data, sizeof(control_data));
 
-  ROS_INFO("Received head cmd %f %d, %f %d", 
-    msg->cmd_angle_pitch, control_data.angle_pitch,
-    msg->cmd_angle_yaw, control_data.angle_yaw);
+  // ROS_INFO("Received head cmd %f %d, %f %d", 
+  //   msg->cmd_angle_pitch, control_data.angle_pitch,
+  //   msg->cmd_angle_yaw, control_data.angle_yaw);
   
   ros_last_received = ros::Time::now();
 }
@@ -258,10 +258,10 @@ int main(int argc, char **argv)
                 return realtime_data->system_error;
               }
 
-             ROS_INFO("Pitch %0.4f %0.4f %0.4f", 
-                  INT16_TO_DEG(realtime_data->imu_angle_pitch),
-                  INT16_TO_DEG(realtime_data->target_angle_pitch),
-                  INT16_TO_DEG(realtime_data->stator_angle_pitch));
+            //  ROS_INFO("Pitch %0.4f %0.4f %0.4f", 
+            //       INT16_TO_DEG(realtime_data->imu_angle_pitch),
+            //       INT16_TO_DEG(realtime_data->target_angle_pitch),
+            //       INT16_TO_DEG(realtime_data->stator_angle_pitch));
 
               // Publish a feedback message with the data
               bumble::HeadFeedback feedback_msg;
