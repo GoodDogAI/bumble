@@ -127,11 +127,12 @@ typedef struct __attribute__((__packed__)) {
   uint8_t control_mode_yaw;
 
   int16_t speed_roll;
-  int16_t speed_pitch;
-  int16_t speed_yaw;
-
   int16_t angle_roll;
+
+  int16_t speed_pitch;
   int16_t angle_pitch;
+
+  int16_t speed_yaw;
   int16_t angle_yaw;
 } bgc_control_data;
 

@@ -3,6 +3,7 @@
 #include "std_msgs/Float32.h"
 #include "geometry_msgs/Twist.h"
 #include "bumble/HeadFeedback.h"
+#include "bumble/HeadCommand.h"
 #include "simplebgc.h"
 
 #include <iostream>
@@ -18,6 +19,11 @@
 #include <math.h>
 
 ros::Time bgc_last_received;
+ros::Time ros_last_received;
+
+//fd for serial port connection
+int serial_port;
+
 static uint8_t bgc_state = BGC_WAITING_FOR_START_BYTE;
 static uint8_t bgc_payload_counter = 0;
 static uint8_t bgc_payload_crc[2];
@@ -88,6 +94,25 @@ void send_message(int fd, uint8_t cmd, uint8_t *payload, uint16_t payload_size) 
   write(fd, crc, sizeof(crc));
 }
 
+void head_cmd_callback(const bumble::HeadCommand::ConstPtr& msg)
+{
+  // Send a control command immediately to set the new position
+  bgc_control_data control_data;
+  memset(&control_data, 0, sizeof(control_data));
+
+  control_data.control_mode_roll = CONTROL_MODE_IGNORE;
+  control_data.control_mode_pitch = CONTROL_MODE_ANGLE_REL_FRAME;
+  control_data.control_mode_yaw = CONTROL_MODE_ANGLE_REL_FRAME;
+  control_data.angle_pitch = round(DEG_TO_INT16(msg->cmd_angle_pitch));
+  control_data.angle_yaw = round(DEG_TO_INT16(msg->cmd_angle_yaw));
+  send_message(serial_port, CMD_CONTROL, (uint8_t *)&control_data, sizeof(control_data));
+
+  ROS_INFO("Received head cmd %f %d, %f %d", 
+    msg->cmd_angle_pitch, control_data.angle_pitch,
+    msg->cmd_angle_yaw, control_data.angle_yaw);
+  
+  ros_last_received = ros::Time::now();
+}
 
 /**
  * This node provides a simple interface to the ODrive module, it accepts cmd_vel messages to drive the motors,
@@ -103,15 +128,17 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
   ros::NodeHandle nhPriv("~");
 
+  ros::Subscriber sub = n.subscribe("head_cmd", 1, head_cmd_callback);
   ros::Publisher feedback_pub = n.advertise<bumble::HeadFeedback>("head_feedback", 1);
 
   // Set the last message received time so we know if we stop getting messages and have to 
   // shut down the motors.
   bgc_last_received = ros::Time::now();
+  ros_last_received = ros::Time::now();
 
   ros::Rate loop_rate(10);
 
-  int serial_port = open(nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str(), O_RDWR | O_NOCTTY);
+  serial_port = open(nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str(), O_RDWR | O_NOCTTY);
 
   if (serial_port < 0) {
       ROS_ERROR("Error %i from open: %s\n", errno, strerror(errno));
@@ -161,14 +188,6 @@ int main(int argc, char **argv)
       ROS_ERROR("No messages received in 5 seconds, shutting down BGC subsystem");
       return 1;
     }
-
-    // Send a control command to zero the yaw
-    // bgc_control_data control_data;
-    // control_data.control_mode_roll = CONTROL_MODE_IGNORE;
-    // control_data.control_mode_pitch = CONTROL_MODE_IGNORE;
-    // control_data.control_mode_yaw = CONTROL_MODE_ANGLE_REL_FRAME;
-    // control_data.angle_yaw = 0;
-    // send_message(serial_port, CMD_CONTROL, (uint8_t *)&control_data, sizeof(control_data));
 
     int ret = poll(&serial_port_poll, 1, 5);
     
@@ -239,6 +258,11 @@ int main(int argc, char **argv)
                 return realtime_data->system_error;
               }
 
+             ROS_INFO("Pitch %0.4f %0.4f %0.4f", 
+                  INT16_TO_DEG(realtime_data->imu_angle_pitch),
+                  INT16_TO_DEG(realtime_data->target_angle_pitch),
+                  INT16_TO_DEG(realtime_data->stator_angle_pitch));
+
               // Publish a feedback message with the data
               bumble::HeadFeedback feedback_msg;
               feedback_msg.cur_angle_pitch = INT16_TO_DEG(realtime_data->stator_angle_pitch);
@@ -268,11 +292,9 @@ int main(int argc, char **argv)
       }
     }
 
-
     ros::spinOnce();
     loop_rate.sleep();
   }
-
 
   return 0;
 }
