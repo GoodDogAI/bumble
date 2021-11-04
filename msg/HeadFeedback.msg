@@ -1,7 +1,7 @@
 Header header
 
-# report the last head pan command sent to the dynamixels
-float32 pan_command
+# report the current pitch angle
+float32 cur_angle_pitch
 
 # report the last head tilt command
-float32 tilt_command
+float32 cur_angle_yaw

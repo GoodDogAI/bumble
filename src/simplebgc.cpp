@@ -2,7 +2,7 @@
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
 #include "geometry_msgs/Twist.h"
-#include "bumble/ODriveFeedback.h"
+#include "bumble/HeadFeedback.h"
 #include "simplebgc.h"
 
 #include <iostream>
@@ -103,6 +103,8 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
   ros::NodeHandle nhPriv("~");
 
+  ros::Publisher feedback_pub = n.advertise<bumble::HeadFeedback>("head_feedback", 1);
+
   // Set the last message received time so we know if we stop getting messages and have to 
   // shut down the motors.
   bgc_last_received = ros::Time::now();
@@ -178,9 +180,6 @@ int main(int argc, char **argv)
         ROS_ERROR("Error %i from read: %s\n", errno, strerror(errno));
         return errno;
       }
-      else {
-        ROS_INFO("Read %zu bytes", bytes_read);
-      }
 
       for (ssize_t i = 0; i < bytes_read; i++) {
         if (bgc_state == BGC_WAITING_FOR_START_BYTE && buf[i] == simplebgc_start_byte) {
@@ -228,7 +227,7 @@ int main(int argc, char **argv)
             ROS_ERROR("Payload checksum failed");
           }
           else {
-            ROS_INFO("Recieved valid message of type %d", bgc_rx_msg->command_id);
+            //ROS_INFO("Recieved valid message of type %d", bgc_rx_msg->command_id);
             bgc_last_received = ros::Time::now();
 
             if (bgc_rx_msg->command_id == CMD_REALTIME_DATA_4) {
@@ -236,12 +235,16 @@ int main(int argc, char **argv)
 
               if (realtime_data->system_error) {
                 ROS_ERROR("BGC Error %02x", realtime_data->system_error);
+                ROS_ERROR("Shutting down BGC");
+                return realtime_data->system_error;
               }
 
-              ROS_INFO("Yaw %0.4f %0.4f %0.4f", 
-                  INT16_TO_DEG(realtime_data->imu_angle_yaw),
-                  INT16_TO_DEG(realtime_data->target_angle_yaw),
-                  INT16_TO_DEG(realtime_data->stator_angle_yaw));
+              // Publish a feedback message with the data
+              bumble::HeadFeedback feedback_msg;
+              feedback_msg.cur_angle_pitch = INT16_TO_DEG(realtime_data->stator_angle_pitch);
+              feedback_msg.cur_angle_yaw = INT16_TO_DEG(realtime_data->stator_angle_yaw);
+              feedback_msg.header.stamp = ros::Time::now();
+              feedback_pub.publish(feedback_msg);
             }
             else if (bgc_rx_msg->command_id == CMD_GET_ANGLES_EXT) {
               bgc_angles_ext *angles_ext = (bgc_angles_ext *)bgc_rx_msg->payload;

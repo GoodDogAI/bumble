@@ -413,7 +413,6 @@ int main(int argc, char **argv)
   ros::NodeHandle nhPriv("~");
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
-  ros::Publisher feedback_pub = n.advertise<bumble::HeadFeedback>("head_feedback", 5);
 
   // Publishes intermedia debug messages for verifying proper operation. 
   // Typically you would not enable this, because the bag recording will have trouble keeping up
@@ -720,13 +719,6 @@ int main(int argc, char **argv)
     // tiltMsg.request.addr_name = "Goal_Position";
     // tiltMsg.request.value = tilt;
     // pan_tilt_client.call(tiltMsg);
-
-    // Publish the feedback command of the pan/tilt so we can log it, otherwise ROS service parameters are not logged
-    bumble::HeadFeedback feedback_msg;
-    feedback_msg.pan_command = pan;
-    feedback_msg.tilt_command = tilt;
-    feedback_msg.header.stamp = ros::Time::now();
-    feedback_pub.publish(feedback_msg);
 
     ros::spinOnce();
     loop_rate.sleep();

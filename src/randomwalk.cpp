@@ -60,7 +60,6 @@ int main(int argc, char **argv)
   tilt_id = n.param<int>("/pan_tilt/tilt_id", 2);
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 2);
-  ros::Publisher feedback_pub = n.advertise<bumble::HeadFeedback>("head_feedback", 2);
 
   ros::Subscriber sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
 
@@ -110,13 +109,6 @@ int main(int argc, char **argv)
     msg.angular.z = angular_mean;
 
     cmd_vel_pub.publish(msg);
-
-    // Publish the feedback command of the pan/tilt so we can log it, otherwise ROS service parameters are not logged
-    bumble::HeadFeedback feedback_msg;
-    feedback_msg.pan_command = head_pan;
-    feedback_msg.tilt_command = head_tilt;
-    feedback_msg.header.stamp = ros::Time::now();
-    feedback_pub.publish(feedback_msg);
 
     ros::spinOnce();
 
