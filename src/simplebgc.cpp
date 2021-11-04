@@ -88,9 +88,9 @@ typedef struct __attribute__((__packed__)) {
   int16_t frame_imu_angle_pitch;
   int16_t frame_imu_angle_yaw;
 
-  int16_t target_imu_angle_roll;
-  int16_t target_imu_angle_pitch;
-  int16_t target_imu_angle_yaw;
+  int16_t target_angle_roll;
+  int16_t target_angle_pitch;
+  int16_t target_angle_yaw;
 
   uint16_t cycle_time;
   uint16_t i2c_error_count;
@@ -104,9 +104,95 @@ typedef struct __attribute__((__packed__)) {
   uint8_t motor_power_roll;
   uint8_t motor_power_pitch;
   uint8_t motor_power_yaw;
-} bgc_realtime_data_3;
+
+  int16_t stator_angle_roll;
+  int16_t stator_angle_pitch;
+  int16_t stator_angle_yaw;
+
+  uint8_t reserved_3;
+
+  int16_t balance_error_roll;
+  int16_t balance_error_pitch;
+  int16_t balance_error_yaw;
+
+  uint16_t current_ma;
+
+  int16_t mag_data_0;
+  int16_t mag_data_1;
+  int16_t mag_data_2;
+
+  int8_t imu_temp;
+  int8_t frame_imu_temp;
+  uint8_t img_g_err;
+  uint8_t img_h_err;
+  
+  int16_t motor_out_roll;
+  int16_t motor_out_pitch;
+  int16_t motor_out_yaw;
+
+  uint8_t calib_mode;
+  uint8_t can_imu_ext_sense_err;
+
+  uint8_t reserved_buf[28];
+} bgc_realtime_data_4;
 
 
+typedef struct __attribute__((__packed__)) {
+  uint8_t control_mode_roll;
+  uint8_t control_mode_pitch;
+  uint8_t control_mode_yaw;
+
+  int16_t speed_roll;
+  int16_t speed_pitch;
+  int16_t speed_yaw;
+
+  int16_t angle_roll;
+  int16_t angle_pitch;
+  int16_t angle_yaw;
+} bgc_control_data;
+
+typedef struct __attribute__((__packed__)) {
+  int16_t imu_angle_roll;
+  int16_t target_angle_roll;
+  int32_t stator_angle_roll;
+  int8_t reserved_roll[10];
+
+  int16_t imu_angle_pitch;
+  int16_t target_angle_pitch;
+  int32_t stator_angle_pitch;
+  int8_t reserved_pitch[10];
+
+  int16_t imu_angle_yaw;
+  int16_t target_angle_yaw;
+  int32_t stator_angle_yaw;
+  int8_t reserved_yaw[10];
+} bgc_angles_ext;
+
+typedef struct __attribute__((__packed__)) {
+  uint8_t cmd_id;
+  uint16_t interval_ms;
+
+  uint8_t config[8];
+  uint8_t sync_to_data;
+  uint8_t reserved[9];
+} bgc_data_stream_interval;
+
+#define INT16_TO_DEG(x) ((x) * 0.02197265625f)
+#define DEG_TO_INT16(x) ((x) / 0.02197265625f)
+
+#define CONTROL_MODE_NO_CONTROL 0
+#define CONTROL_MODE_IGNORE 7
+#define CONTROL_MODE_SPEED 1
+#define CONTROL_MODE_ANGLE 2
+#define CONTROL_MODE_SPEED_ANGLE 3
+#define CONTROL_MODE_RC 4
+#define CONTROL_MODE_ANGLE_REL_FRAME 5
+#define CONTROL_MODE_RC_HIGH_RES 6
+
+#define CONTROL_FLAG_AUTO_TASK (1<<6)
+#define CONTROL_FLAG_FORCE_RC_SPEED (1<<6)
+#define CONTROL_FLAG_HIGH_RES_SPEED (1<<7)
+#define CONTROL_FLAG_TARGET_PRECISE (1<<5)
 
 #define CMD_READ_PARAMS  82
 #define CMD_WRITE_PARAMS  87
@@ -205,6 +291,47 @@ typedef struct __attribute__((__packed__)) {
 #define CMD_DEBUG_VARS_INFO_3 253
 #define CMD_DEBUG_VARS_3 254
 #define CMD_ERROR  255
+
+// Menu actions (used in the SBGC_MENU_BUTTON_PRESS command, menu button assignment, RC_CMD channel assignment)
+#define SBGC_MENU_PROFILE1 1
+#define SBGC_MENU_PROFILE2 2
+#define SBGC_MENU_PROFILE3 3
+#define SBGC_MENU_SWAP_PITCH_ROLL 4
+#define SBGC_MENU_SWAP_YAW_ROLL 5
+#define SBGC_MENU_CALIB_ACC 6
+#define SBGC_MENU_RESET 7
+#define SBGC_MENU_SET_ANGLE 8
+#define SBGC_MENU_CALIB_GYRO 9
+#define SBGC_MENU_MOTOR_TOGGLE 10
+#define SBGC_MENU_MOTOR_ON 11
+#define SBGC_MENU_MOTOR_OFF 12
+#define SBGC_MENU_FRAME_UPSIDE_DOWN 13
+#define SBGC_MENU_PROFILE4 14
+#define SBGC_MENU_PROFILE5 15
+#define SBGC_MENU_AUTO_PID 16
+#define SBGC_MENU_LOOK_DOWN 17
+#define SBGC_MENU_HOME_POSITION 18
+#define SBGC_MENU_RC_BIND 19
+#define SBGC_MENU_CALIB_GYRO_TEMP 20
+#define SBGC_MENU_CALIB_ACC_TEMP 21
+#define SBGC_MENU_BUTTON_PRESS 22
+#define SBGC_MENU_RUN_SCRIPT1 23
+#define SBGC_MENU_RUN_SCRIPT2 24
+#define SBGC_MENU_RUN_SCRIPT3 25
+#define SBGC_MENU_RUN_SCRIPT4 26
+#define SBGC_MENU_RUN_SCRIPT5 27
+#define SBGC_MENU_RUN_SCRIPT6 28
+#define SBGC_MENU_RUN_SCRIPT7 29
+#define SBGC_MENU_RUN_SCRIPT8 30
+#define SBGC_MENU_RUN_SCRIPT9 31
+#define SBGC_MENU_RUN_SCRIPT10 32
+#define SBGC_MENU_CALIB_MAG 33
+#define SBGC_MENU_LEVEL_ROLL_PITCH 34
+#define SBGC_MENU_CENTER_YAW 35
+#define SBGC_MENU_UNTWIST_CABLES 36
+#define SBGC_MENU_SET_ANGLE_NO_SAVE 37
+#define SBGC_MENU_HOME_POSITION_SHORTEST 38
+#define SBGC_MENU_CENTER_YAW_SHORTEST 39
 
 ros::Time last_received;
 static volatile bool motors_enabled;
@@ -327,6 +454,18 @@ int main(int argc, char **argv)
 
   ROS_INFO("Opened SimpleBGC serial port %s", nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str());
 
+  // Recenter the YAW Axis
+  uint8_t menu_cmd = SBGC_MENU_CENTER_YAW;
+  send_message(serial_port, CMD_EXECUTE_MENU, &menu_cmd, 1);
+
+  // Register a realtime data stream syncing up with the loop rate
+  bgc_data_stream_interval stream_data;
+  memset(&stream_data, 0, sizeof(bgc_data_stream_interval));
+  stream_data.cmd_id = CMD_REALTIME_DATA_4;
+  stream_data.interval_ms = loop_rate.expectedCycleTime().toSec() * 1000;
+  stream_data.sync_to_data = 0;
+
+  send_message(serial_port, CMD_DATA_STREAM_INTERVAL, (uint8_t *)&stream_data, sizeof(stream_data));
  
   pollfd serial_port_poll = {serial_port, POLLIN, 0};
 
@@ -334,19 +473,18 @@ int main(int argc, char **argv)
   {
     ros::Time start = ros::Time::now();
 
-    // Continue sending the board info command until we get a response
-    // uint8_t board_info_payload[2];
-    // board_info_payload[0] = 0x00;
-    // board_info_payload[1] = 0x00;
-    // send_message(serial_port, CMD_BOARD_INFO, board_info_payload, 2);
-    
-    // Send a request for realtime data
-    send_message(serial_port, CMD_REALTIME_DATA_3, NULL, 0);
+    // Send a control command to zero the yaw
+    // bgc_control_data control_data;
+    // control_data.control_mode_roll = CONTROL_MODE_IGNORE;
+    // control_data.control_mode_pitch = CONTROL_MODE_IGNORE;
+    // control_data.control_mode_yaw = CONTROL_MODE_ANGLE_REL_FRAME;
+    // control_data.angle_yaw = 0;
+    // send_message(serial_port, CMD_CONTROL, (uint8_t *)&control_data, sizeof(control_data));
 
     int ret = poll(&serial_port_poll, 1, 5);
     
     if (serial_port_poll.revents & POLLIN) {
-      uint8_t buf[256];
+      uint8_t buf[1024];
       ssize_t bytes_read = read(serial_port, buf, sizeof(buf));
 
       if (bytes_read < 0) {
@@ -405,12 +543,32 @@ int main(int argc, char **argv)
           else {
             ROS_INFO("Recieved valid message of type %d", bgc_rx_msg->command_id);
 
-            if (bgc_rx_msg->command_id == CMD_REALTIME_DATA_3) {
-              bgc_realtime_data_3 *realtime_data = (bgc_realtime_data_3 *)bgc_rx_msg->payload;
-              //ROS_INFO("%d %d %d", realtime_data->motor_power_pitch, realtime_data->motor_power_roll, realtime_data->motor_power_yaw);
-              //ROS_INFO("%d %d", realtime_data->imu_angle_pitch, realtime_data->imu_angle_yaw);
-              
-              ROS_INFO("Battery voltage %f V %d", realtime_data->bat_level * 0.01, sizeof(bgc_realtime_data_3));
+            if (bgc_rx_msg->command_id == CMD_REALTIME_DATA_4) {
+              bgc_realtime_data_4 *realtime_data = (bgc_realtime_data_4 *)bgc_rx_msg->payload;
+
+              if (realtime_data->system_error) {
+                ROS_ERROR("BGC Error %02x", realtime_data->system_error);
+              }
+
+              ROS_INFO("Yaw %0.4f %0.4f %0.4f", 
+                  INT16_TO_DEG(realtime_data->imu_angle_yaw),
+                  INT16_TO_DEG(realtime_data->target_angle_yaw),
+                  INT16_TO_DEG(realtime_data->stator_angle_yaw));
+            }
+            else if (bgc_rx_msg->command_id == CMD_GET_ANGLES_EXT) {
+              bgc_angles_ext *angles_ext = (bgc_angles_ext *)bgc_rx_msg->payload;
+              ROS_INFO("Yaw %0.4f %0.4f %0.4f", 
+                  INT16_TO_DEG(angles_ext->imu_angle_yaw),
+                  INT16_TO_DEG(angles_ext->target_angle_yaw),
+                  INT16_TO_DEG(angles_ext->stator_angle_yaw));
+
+               ROS_INFO("Pitch %0.4f %0.4f %0.4f", 
+                  INT16_TO_DEG(angles_ext->imu_angle_pitch),
+                  INT16_TO_DEG(angles_ext->target_angle_pitch),
+                  INT16_TO_DEG(angles_ext->stator_angle_pitch));
+            }
+            else if (bgc_rx_msg->command_id == CMD_ERROR) {
+               ROS_ERROR("Received CMD_ERROR from BGC");
             }
           }
 
@@ -419,21 +577,6 @@ int main(int argc, char **argv)
       }
     }
 
-    // If you haven't received a message in the last second, then stop the motors
-    // if (ros::Time::now() - last_received > ros::Duration(1)) {
-    //   if (motors_enabled) {
-    //     ROS_WARN("Didn't receive a message for the past second, shutting down BGC");
-    //     motors_enabled = false;
-
-    //   }
-    // } 
-    // else {
-    //   if (!motors_enabled) {
-    //     ROS_INFO("Received ROS message, enabling BGC");
-    //     motors_enabled = true;
-
-    //   }
-    // }
 
     ros::spinOnce();
     loop_rate.sleep();
