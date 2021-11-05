@@ -602,10 +602,15 @@ int main(int argc, char **argv)
         mlp_input[10] = last_vbus - 27.0f;
     
         //Copy every 157st element into the SAC model
-        for (int i = 0; i < MLP_INPUT_SIZE - 11; i++) {
-            mlp_input[11 + i] = intermediateOut[i * 157];
-            //mlp_input[11 + i] = intermediateOut[i * 29];
-        }
+        #if MLP_INPUT_SIZE == 990
+            for (int i = 0; i < MLP_INPUT_SIZE - 11; i++) {
+                mlp_input[11 + i] = intermediateOut[i * 157];
+            }
+        #elif MLP_INPUT_SIZE == 5308
+            for (int i = 0; i < MLP_INPUT_SIZE - 11; i++) {
+                mlp_input[11 + i] = intermediateOut[i * 29];
+            }
+        #endif
 
         // Put the newly constructed observation into the mlp_input_history buffer
         mlp_input_history.push_back(mlp_input);
