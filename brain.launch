@@ -1,6 +1,6 @@
 <launch>
   <arg name="yolo_checkpoint" default="yolov5s_v5_0_op11_rossac" />
-  <arg name="brain_checkpoint" default="sac-young-hippogriff-465-15872" />
+  <arg name="brain_checkpoint" default="sac-crimson-firefly-469-06144" />
   <arg name="sampling_scale" default="0.0" />
  
   <include file="$(find mainbot)/config/odrive.launch"/>
