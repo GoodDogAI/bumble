@@ -5,6 +5,7 @@ project(mainbot)
 add_compile_options(-std=c++17)
 
 set(CUDA_INSTALL_DIR /usr/local/cuda)
+set(CMAKE_PREFIX_PATH "/home/robot/.local/lib/python3.6/site-packages/torch/")
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -22,6 +23,8 @@ pkg_check_modules(GST1.0 gstreamer-1.0 REQUIRED)
 
 find_package(CUDA)
 
+find_package(Torch REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -132,7 +135,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${GST1.0_INCLUDE_DIRS}
   ${CUDA_INSTALL_DIR}/include
-  "/usr/include/eigen3"
+  "${TORCH_INCLUDE_DIRS}"
 )
 
 ## Declare a C++ library
@@ -197,6 +200,7 @@ target_link_libraries(brain
   ${RT_LIB}
   ${CMAKE_DL_LIBS}
   ${CMAKE_THREAD_LIBS_INIT}
+  "${TORCH_LIBRARIES}"
 )
 
 #############
@@ -248,7 +252,10 @@ target_link_libraries(brain
 ## Add gtest based cpp test target and link libraries
 catkin_add_gtest(${PROJECT_NAME}-test test/test_audio_processing.cpp)
 if(TARGET ${PROJECT_NAME}-test)
-  target_link_libraries(${PROJECT_NAME}-test ${catkin_LIBRARIES})
+  target_link_libraries(${PROJECT_NAME}-test 
+    ${catkin_LIBRARIES}
+    "${TORCH_LIBRARIES}"
+  )
 endif()
 
 ## Add folders to be run by python nosetests

@@ -16,7 +16,6 @@
 #include "mainbot/ODriveFeedback.h"
 
 #include <boost/make_shared.hpp>
-#include <Eigen/Core>
 
 #include "NvOnnxParser.h"
 #include "NvInfer.h"
