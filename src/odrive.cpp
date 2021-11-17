@@ -84,8 +84,6 @@ float send_float_command(int fd, const std::string& command) {
     return NAN;
   }
 
-  std::cout << "response: " << response << std::endl;
-
   return std::stof(response);
 }
 
@@ -158,7 +156,6 @@ int main(int argc, char **argv)
 
   cfsetispeed(&tty, B115200);
   cfsetospeed(&tty, B115200);
-  //tty_raw(&tty);
 
   // Save tty settings, also checking for error
   if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
@@ -167,6 +164,8 @@ int main(int argc, char **argv)
   }
 
   ros::Subscriber sub = n.subscribe("cmd_vel", 10, twistCallback);
+
+  ROS_INFO("Opened ODrive serial device, starting communication");
 
   // Make the first communication with the ODrive
   for (int attempt = 0; attempt < 5; attempt++) {
