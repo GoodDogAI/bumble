@@ -3,6 +3,7 @@
 #include "std_msgs/Float32.h"
 #include "geometry_msgs/Twist.h"
 #include "bumble/ODriveFeedback.h"
+#include "rawtty.h"
 
 #include <iostream>
 #include <fstream>
@@ -83,6 +84,8 @@ float send_float_command(int fd, const std::string& command) {
     return NAN;
   }
 
+  std::cout << "response: " << response << std::endl;
+
   return std::stof(response);
 }
 
@@ -155,6 +158,7 @@ int main(int argc, char **argv)
 
   cfsetispeed(&tty, B115200);
   cfsetospeed(&tty, B115200);
+  //tty_raw(&tty);
 
   // Save tty settings, also checking for error
   if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {

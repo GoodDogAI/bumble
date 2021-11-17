@@ -5,6 +5,7 @@
 #include "bumble/HeadFeedback.h"
 #include "bumble/HeadCommand.h"
 #include "simplebgc.h"
+#include "rawtty.h"
 
 #include <iostream>
 #include <fstream>
@@ -55,28 +56,6 @@ void crc16_calculate(uint16_t length, uint8_t *data, uint8_t crc[2]) {
   crc16_update(length, data, crc);
 }
 
-void tty_raw(struct termios *raw) {
-  /* input modes - clear indicated ones giving: no break, no CR to NL, 
-      no parity check, no strip char, no start/stop output (sic) control */
-  raw->c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-
-  /* output modes - clear giving: no post processing such as NL to CR+NL */
-  raw->c_oflag &= ~(OPOST);
-
-  /* control modes - set 8 bit chars */
-  raw->c_cflag |= (CS8);
-
-  /* local modes - clear giving: echoing off, canonical off (no erase with 
-      backspace, ^U,...),  no extended functions, no signal chars (^Z,^C) */
-  raw->c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-
-  /* control chars - set return condition: min number of bytes and timer */
-  // raw->c_cc[VMIN] = 5; raw->c_cc[VTIME] = 8; /* after 5 bytes or .8 seconds
-  //                                             after first byte seen      */
-  raw->c_cc[VMIN] = 0; raw->c_cc[VTIME] = 0; /* immediate - anything       */
-  // raw->c_cc[VMIN] = 2; raw->c_cc[VTIME] = 0; /* after two bytes, no timer  */
-  // raw->c_cc[VMIN] = 0; raw->c_cc[VTIME] = 8; /* after a byte or .8 seconds */
-}
 
 void send_message(int fd, uint8_t cmd, uint8_t *payload, uint16_t payload_size) {
   bgc_msg *cmd_msg = (bgc_msg *)malloc(sizeof(bgc_msg) + payload_size);

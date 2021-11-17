@@ -129,7 +129,7 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS}
   ${GST1.0_INCLUDE_DIRS}
   ${CUDA_INSTALL_DIR}/include
