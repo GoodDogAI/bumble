@@ -45,10 +45,14 @@ int main(int argc, char **argv)
 
     ros::Publisher reward_raw_pub = n.advertise<std_msgs::Byte>("reward_button_raw", 0);
 
-    ros::Duration penalty_duration = ros::Duration(nhPriv.param<float>("penalty_duration_secs", 1.0));
+    ros::WallDuration penalty_duration = ros::WallDuration(nhPriv.param<float>("penalty_duration_secs", 1.0));
     
-    ros::Time last_penalty;
+    ros::SteadyTime last_penalty;
     int8_t last_score_received = 0;
+
+    ros::SteadyTime last_bt_msg_recv = ros::SteadyTime::now();
+    int last_bt_timestamp = 0;
+    int bt_jitters[16] = { 0 };
 
     struct sockaddr_rc loc_addr = { 0 }, rem_addr = { 0 };
     char buf[8] = { 0 };
@@ -117,8 +121,20 @@ int main(int argc, char **argv)
                         data_msg.data = buf[0];
                         reward_raw_pub.publish(data_msg);
 
-                        ROS_INFO("read [%d,%d,%d,%d, %d,%d, %d,%d]", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
-
+                        int current_bt_timestamp = buf[0] << 24 + buf[1] << 16 + buf[2] << 8 + buf[3];
+                        int expected_delay = current_bt_timestamp - last_bt_timestamp;
+                        ros::SteadyTime now = ros::SteadyTime::now();
+                        int actual_delay = (int)((now - last_bt_msg_recv).toNSec() / 1000L / 1000L);
+                        int total_jitter = 0;
+                        for (int i=0; i<15; i++) {
+                            bt_jitters[i+1] = bt_jitters[i];
+                            total_jitter += bt_jitters[i];
+                        }
+                        bt_jitters[0] = (expected_delay - actual_delay);
+                        total_jitter += bt_jitters[0];
+                        ROS_INFO("read [%d,%d,%d,%d, %d,%d, %d,%d], jitter=%d", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], total_jitter);
+                        last_bt_timestamp = current_bt_timestamp;
+                        last_bt_msg_recv = now;
 
                         if (buf[BUF_DISCRIMINANT_INDEX] == BUF_MOVE_MESSAGE) {
                             geometry_msgs::Twist cmd_vel_msg;
@@ -127,11 +143,15 @@ int main(int argc, char **argv)
                                 cmd_vel_msg.linear.x = override_linear_speed;
                             else if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_BACKWARD)
                                 cmd_vel_msg.linear.x = -override_linear_speed;
+                            else
+                                cmd_vel_msg.linear.x = 0;
 
                             if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_LEFT)
                                 cmd_vel_msg.angular.z = override_angular_speed;
                             else if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_RIGHT)
                                 cmd_vel_msg.angular.z = -override_angular_speed;
+                            else
+                                cmd_vel_msg.angular.z = 0;
                             
                             reward_cmd_vel_pub.publish(cmd_vel_msg);
                             override_cmd_vel_msg.data = true;
@@ -140,7 +160,7 @@ int main(int argc, char **argv)
                             last_score_received = buf[BUF_SCORE_INDEX];
                             ROS_INFO("Score %d detected from app", last_score_received);
                             
-                            last_penalty = ros::Time::now();
+                            last_penalty = ros::SteadyTime::now();
                         }
                         else if (buf[BUF_DISCRIMINANT_INDEX] == BUF_EMPTY_MESSAGE) {
                             override_cmd_vel_msg.data = false;
@@ -155,7 +175,7 @@ int main(int argc, char **argv)
 
                         // Publish the latest value of the reward button
                         std_msgs::Float32 reward;
-                        reward.data = (ros::Time::now() - last_penalty) > penalty_duration ? 0.0 : (float)last_score_received;
+                        reward.data = (ros::SteadyTime::now() - last_penalty) > penalty_duration ? 0.0 : (float)last_score_received;
                         reward_pub.publish(reward);
 
                         missed_intervals = 0;
