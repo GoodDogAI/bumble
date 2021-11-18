@@ -426,7 +426,7 @@ int main(int argc, char **argv)
   // TODO: However, it appears that it doesn't work right?
   //ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command", false);
 
-  ros::Subscriber camera_sub = n.subscribe("/camera/infra2/image_rect_raw", 1, cameraImageCallback);
+  ros::Subscriber camera_sub = n.subscribe("/camera/color/image_raw", 1, cameraImageCallback);
   
   ros::Subscriber reward_sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
   ros::Subscriber reward_connected_sub = n.subscribe("/reward_button_connected", 1, rewardButtonConnectedCallback);
@@ -529,16 +529,14 @@ int main(int argc, char **argv)
         float* hostInputBuffer = static_cast<float*>(yoloBuffers.getHostBuffer(INPUT_BINDING_NAME));
 
         // Only MONO8 encoding is supported for now
-        assert(image_ptr->encoding == sensor_msgs::image_encodings::MONO8);
-
-        ROS_INFO("STEP: %d", image_ptr->step);
-
+        assert(image_ptr->encoding == sensor_msgs::image_encodings::RGB8);
+        
         //NCHW format is offset_nchw(n, c, h, w) = n * CHW + c * HW + h * W + w
         for(int i=0; i < image_ptr->height; i++) {
             for(int j=0; j < image_ptr->width; j++) {
-                hostInputBuffer[0 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j] / 255.0;
-                hostInputBuffer[1 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j] / 255.0;
-                hostInputBuffer[2 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j] / 255.0;
+                hostInputBuffer[0 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j * 3 + 0] / 255.0;
+                hostInputBuffer[1 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j * 3 + 1] / 255.0;
+                hostInputBuffer[2 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j * 3 + 2] / 255.0;
             }
         }
     

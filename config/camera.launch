@@ -8,12 +8,12 @@
         <arg name="enable_color" value="true"/>
         <arg name="color_width" value="640"/>
         <arg name="color_height" value="480"/>
-        <arg name="color_fps" value="30"/>
+        <arg name="color_fps" value="15"/>
 
-        <arg name="enable_infra2" value="true"/>
+        <arg name="enable_infra2" value="false"/>
         <arg name="infra_width" value="640"/>
         <arg name="infra_height" value="480"/>
-        <arg name="infra_fps" value="30"/>
+        <arg name="infra_fps" value="15"/>
 
         <arg name="enable_gyro" value="true"/>
         <arg name="enable_accel" value="true"/>

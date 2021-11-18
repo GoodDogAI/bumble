@@ -84,6 +84,10 @@ void head_cmd_callback(const bumble::HeadCommand::ConstPtr& msg)
   control_data.control_mode_yaw = CONTROL_MODE_ANGLE_REL_FRAME;
   control_data.angle_pitch = round(DEG_TO_INT16(msg->cmd_angle_pitch));
   control_data.angle_yaw = round(DEG_TO_INT16(msg->cmd_angle_yaw));
+
+  control_data.speed_pitch = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
+  control_data.speed_yaw = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
+
   send_message(serial_port, CMD_CONTROL, (uint8_t *)&control_data, sizeof(control_data));
 
   // ROS_INFO("Received head cmd %f %d, %f %d", 

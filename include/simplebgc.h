@@ -165,6 +165,8 @@ typedef struct __attribute__((__packed__)) {
 #define INT16_TO_DEG(x) ((x) * 0.02197265625f)
 #define DEG_TO_INT16(x) ((x) / 0.02197265625f)
 
+#define CONTROL_SPEED_DEG_PER_SEC_PER_UNIT 0.1220740379f
+
 #define CONTROL_MODE_NO_CONTROL 0
 #define CONTROL_MODE_IGNORE 7
 #define CONTROL_MODE_SPEED 1

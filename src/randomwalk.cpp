@@ -56,7 +56,7 @@ int main(int argc, char **argv)
 
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 1);
-  ros::Publisher head_pub = n.advertise<geometry_msgs::Twist>("head_cmd", 1);
+  ros::Publisher head_pub = n.advertise<bumble::HeadCommand>("head_cmd", 1);
 
   ros::Subscriber sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
 
