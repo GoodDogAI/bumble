@@ -6,7 +6,7 @@
 
     <!-- 
         -a record everything
-        -j BZ2 compress
+        -j BZ2 compress # this is too slow, and lz4 compression can miss packets
         -buffsize internal buffer size in megabtyes
         -split splits when the max size or duration is reached
         -o output location prefix
