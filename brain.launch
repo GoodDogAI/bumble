@@ -5,6 +5,7 @@
  
   <include file="$(find bumble)/config/odrive.launch"/>
   <include file="$(find bumble)/config/audio.launch"/>
+  <include file="$(find bumble)/config/simplebgc.launch"/>
   <include file="$(find bumble)/config/camera.launch"/>
   <include file="$(find bumble)/config/apprewardbutton.launch"/>
   <include file="$(find bumble)/config/rosbag_capture.launch">
