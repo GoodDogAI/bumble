@@ -2,6 +2,7 @@
     <!-- Leave the laser dot pattern projector disabled -->
     <rosparam>
         /camera/stereo_module/emitter_enabled: 0
+        /camera/rgb_camera/enable_auto_exposure: true
     </rosparam>
 
     <include file="$(find realsense2_camera)/launch/rs_camera.launch">

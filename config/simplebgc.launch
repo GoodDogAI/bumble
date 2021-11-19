@@ -1,5 +1,11 @@
 <launch>
   <node name="simplebgc" pkg="bumble" type="simplebgc" required="true" output="screen">
     <param name="serial_port" value="/dev/ttyTHS0"/>
+
+    <param name="pitch_angle_min" value="-35.0"/>
+    <param name="pitch_angle_max" value="35.0"/>
+
+    <param name="yaw_angle_min" value="-35.0"/>
+    <param name="yaw_angle_max" value="35.0"/>
   </node>
 </launch>

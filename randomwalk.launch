@@ -10,13 +10,7 @@
 
   <node name="randomwalk" pkg="bumble" type="randomwalk"
         required="true" output="screen">
-       <param name="change_frequency_secs" value="2.0"/>
-
-       <param name="pitch_angle_min" value="-35.0"/>
-       <param name="pitch_angle_max" value="35.0"/>
-
-       <param name="yaw_angle_min" value="-35.0"/>
-       <param name="yaw_angle_max" value="35.0"/>
+       <param name="change_frequency_secs" value="0.125"/>
 
        <param name="forward_speed_min" value="-0.35"/>
        <param name="forward_speed_max" value="0.35"/>

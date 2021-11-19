@@ -11,6 +11,7 @@
 #include "sensor_msgs/Imu.h"
 #include "geometry_msgs/Twist.h"
 #include "bumble/HeadFeedback.h"
+#include "bumble/HeadCommand.h"
 #include "bumble/ODriveFeedback.h"
 
 #include <boost/make_shared.hpp>
@@ -38,8 +39,7 @@
 #define MLP_OUTPUT_STDDEV_BINDING_NAME "stddev"
 
 #define OBJECT_DETECTION_THRESHOLD 0.60
-
-#define DEFAULT_STEPS_PER_DEGREE (1024/300.0)
+#define DEFAULT_VBUS 14.0f
 
 const float SPEED_MIN = -0.5;
 const float SPEED_MAX = 0.5;
@@ -57,7 +57,8 @@ sensor_msgs::ImageConstPtr image_ptr;
 ros::Time last_image_received;
 sensor_msgs::Imu last_head_orientation;
 bumble::ODriveFeedback last_odrive_feedback;
-float last_vbus = 27.0f;
+bumble::HeadFeedback last_head_feedback;
+float last_vbus = DEFAULT_VBUS;
 
 geometry_msgs::Twist last_internal_cmd_vel;
 geometry_msgs::Twist last_external_cmd_vel;
@@ -355,15 +356,11 @@ void rewardButtonConnectedCallback(const std_msgs::Bool& override)
 }
 
 
-// Called when you receive a dynamixel current state message
-// void dynamixelStateCallback(const dynamixel_workbench_msgs::DynamixelStateList& msg)
-// {
-//     assert(msg.dynamixel_state.size() == 2);
-//     assert(msg.dynamixel_state[0].name == "pan");
-//     assert(msg.dynamixel_state[1].name == "tilt");
-
-//     last_dynamixel_msg = msg;
-// }
+// Called when you receive a head current state message
+void headFeedbackCallback(const bumble::HeadFeedback& msg)
+{
+    last_head_feedback = msg;
+}
 
 // Called when you receive an accelerometer message from the real sense camera
 void accelCallback(const sensor_msgs::Imu& msg) 
@@ -413,6 +410,7 @@ int main(int argc, char **argv)
   ros::NodeHandle nhPriv("~");
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
+  ros::Publisher head_pub = n.advertise<bumble::HeadCommand>("head_cmd", 1);
 
   // Publishes intermedia debug messages for verifying proper operation. 
   // Typically you would not enable this, because the bag recording will have trouble keeping up
@@ -421,10 +419,6 @@ int main(int argc, char **argv)
   
   ros::Publisher brain_inputs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_inputs", 2);
   ros::Publisher brain_outputs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_outputs", 2);
-
-  // true marks the service as persistent, which greatly improves performance
-  // TODO: However, it appears that it doesn't work right?
-  //ros::ServiceClient pan_tilt_client = n.serviceClient<dynamixel_workbench_msgs::DynamixelCommand>("/dynamixel_workbench/dynamixel_command", false);
 
   ros::Subscriber camera_sub = n.subscribe("/camera/color/image_raw", 1, cameraImageCallback);
   
@@ -437,6 +431,7 @@ int main(int argc, char **argv)
   ros::Subscriber accel_sub = n.subscribe("/camera/accel/sample", 1, accelCallback);
   ros::Subscriber gyro_sub = n.subscribe("/camera/gyro/sample", 1, gyroCallback);
   ros::Subscriber odrive_feedback_sub = n.subscribe("/odrive_feedback", 1, oDriveCallback);
+  ros::Subscriber head_feedback_sub = n.subscribe("/head_feedback", 1, headFeedbackCallback);
   ros::Subscriber vbus_sub = n.subscribe("/vbus", 1, vbusCallback);
 
   ros::Rate loop_rate(nhPriv.param<float>("update_rate", 8.0f));
@@ -445,10 +440,10 @@ int main(int argc, char **argv)
   std::random_device rd;  //Will be used to obtain a seed for the random number engine
   std::mt19937 gen(rd());
 
-  float pan_min = n.param<float>("/pan_tilt/pan_min_angle", 0.0) * n.param<float>("/pan_tilt/pan_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
-  float pan_max = n.param<float>("/pan_tilt/pan_max_angle", 90.0) * n.param<float>("/pan_tilt/pan_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
-  float tilt_min = n.param<float>("/pan_tilt/tilt_min_angle", 0.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
-  float tilt_max = n.param<float>("/pan_tilt/tilt_max_angle", 90.0) * n.param<float>("/pan_tilt/tilt_steps_per_degree", DEFAULT_STEPS_PER_DEGREE);
+  float pan_min = n.param<float>("/simplebgc/yaw_angle_min", -30.0);
+  float pan_max = n.param<float>("/simplebgc/yaw_angle_max", 30.0);
+  float tilt_min = n.param<float>("/simplebgc/pitch_angle_min", -30.0);
+  float tilt_max = n.param<float>("/simplebgc/pitch_angle_max", 30.0);
 
   float sampling_scale = nhPriv.param<float>("sampling_scale", 1.0f);
 
@@ -577,11 +572,8 @@ int main(int argc, char **argv)
         std::vector<float> mlp_input = std::vector<float>(MLP_INPUT_SIZE, 0.0);
 
         // Normalized pan and tilt, current orientation
-        // TODO
-        mlp_input[0] = 0.0f;
-        mlp_input[1] = 0.0f;
-        // mlp_input[0] = normalize_output(last_dynamixel_msg.dynamixel_state[0].present_position, pan_min, pan_max);
-        // mlp_input[1] = normalize_output(last_dynamixel_msg.dynamixel_state[1].present_position, tilt_min, tilt_max);
+        mlp_input[0] = normalize_output(last_head_feedback.cur_angle_yaw, pan_min, pan_max);
+        mlp_input[1] = normalize_output(last_head_feedback.cur_angle_pitch, tilt_min, tilt_max);
 
         // Head gyro
         mlp_input[2] = last_head_orientation.angular_velocity.x / 10.0f;
@@ -598,7 +590,7 @@ int main(int argc, char **argv)
         mlp_input[9] = last_odrive_feedback.motor_vel_actual_1;
 
         // Vbus
-        mlp_input[10] = last_vbus - 27.0f;
+        mlp_input[10] = last_vbus - DEFAULT_VBUS;
     
         //Copy every 157st element into the SAC model
         #if MLP_INPUT_SIZE == 990
@@ -713,17 +705,10 @@ int main(int argc, char **argv)
     }
 
     // Write the output to the head
-    // dynamixel_workbench_msgs::DynamixelCommand panMsg;
-    // panMsg.request.id = n.param<int>("/pan_tilt/pan_id", 1);
-    // panMsg.request.addr_name = "Goal_Position";
-    // panMsg.request.value = pan;
-    // pan_tilt_client.call(panMsg);
-
-    // dynamixel_workbench_msgs::DynamixelCommand tiltMsg;
-    // tiltMsg.request.id = n.param<int>("/pan_tilt/tilt_id", 2);
-    // tiltMsg.request.addr_name = "Goal_Position";
-    // tiltMsg.request.value = tilt;
-    // pan_tilt_client.call(tiltMsg);
+    bumble::HeadCommand head_msg;
+    head_msg.cmd_angle_pitch = tilt;
+    head_msg.cmd_angle_yaw = pan;
+    head_pub.publish(head_msg);
 
     ros::spinOnce();
     loop_rate.sleep();

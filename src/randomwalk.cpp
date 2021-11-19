@@ -48,11 +48,11 @@ int main(int argc, char **argv)
   std::uniform_real_distribution<> ANGULAR_RATE_DIST(nhPriv.param<float>("angular_speed_min", -0.50),
                                                      nhPriv.param<float>("angular_speed_max", 0.50));
 
-  std::uniform_real_distribution<> PITCH_DIST(nhPriv.param<float>("pitch_angle_min", -30.0),
-                                              nhPriv.param<float>("pitch_angle_max", 30.0));
+  std::uniform_real_distribution<> PITCH_DIST(n.param<float>("/simplebgc/pitch_angle_min", -30.0),
+                                              n.param<float>("/simplebgc/pitch_angle_max", 30.0));
 
-  std::uniform_real_distribution<> YAW_DIST(nhPriv.param<float>("yaw_angle_min", -30.0),
-                                            nhPriv.param<float>("yaw_angle_max", 30.0));
+  std::uniform_real_distribution<> YAW_DIST(n.param<float>("/simplebgc/yaw_angle_min", -30.0),
+                                            n.param<float>("/simplebgc/yaw_angle_max", 30.0));
 
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 1);
