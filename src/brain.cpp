@@ -419,6 +419,7 @@ int main(int argc, char **argv)
   
   ros::Publisher brain_inputs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_inputs", 2);
   ros::Publisher brain_outputs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_outputs", 2);
+  ros::Publisher brain_stddevs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_stddevs", 2);
 
   ros::Subscriber camera_sub = n.subscribe("/camera/color/image_raw", 1, cameraImageCallback);
   
@@ -651,8 +652,6 @@ int main(int argc, char **argv)
                     "   pan: " << pan << "   tilt: " << tilt<<
                     "     stddevs: "  << actionsStdDev[0] << " " << actionsStdDev[1] << " " << actionsStdDev[2] << " " << actionsStdDev[3] <<  std::endl;
 
-
-
         last_internal_cmd_vel.linear.x = speed;
         last_internal_cmd_vel.angular.z = ang;
         last_internal_pan = pan;
@@ -667,6 +666,11 @@ int main(int argc, char **argv)
         brain_outputs_msg.data = std::vector<float>(mlpOutput, 
                                                     mlpOutput + mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_OUTPUT_BINDING_NAME)).d[1]);
         brain_outputs_pub.publish(brain_outputs_msg);
+
+        std_msgs::Float32MultiArray brain_stddevs_msg;
+        brain_stddevs_msg.data = std::vector<float>(actionsStdDev, 
+                                                    actionsStdDev + mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_OUTPUT_STDDEV_BINDING_NAME)).d[1]);
+        brain_stddevs_pub.publish(brain_stddevs_msg);
 
         // Clear out the image pointer, so we don't reprocess this image anymore
         image_ptr = nullptr;
