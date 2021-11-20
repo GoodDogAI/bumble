@@ -60,12 +60,6 @@ int send_int_command(int fd, const std::string& command) {
   }
 
   std::string response = read_string(fd);
-
-  if (response == "unknown") {
-    ROS_WARN("Received 'unknown' response to %s", command.c_str());
-    return -1;
-  }
-
   return std::stoi(response);
 }
 
@@ -78,12 +72,6 @@ float send_float_command(int fd, const std::string& command) {
   }
 
   std::string response = read_string(fd);
-
-  if (response == "unknown") {
-    ROS_WARN("Received 'unknown' response to %s", command.c_str());
-    return NAN;
-  }
-
   return std::stof(response);
 }
 
@@ -185,23 +173,25 @@ int main(int argc, char **argv)
 
   // Make the first communication with the ODrive
   for (int attempt = 0; attempt < 5; attempt++) {
+    try {
       float result = send_float_command(serial_port, "r vbus_voltage\n");
-      if (std::isnan(result) || result < 0.0) {
-          if (attempt >= 4) {
-              ROS_ERROR("Could not communicate with ODrive. Exiting.");
-              return -1;
-          }
 
-          ROS_WARN("Error reading from ODrive, retrying");
-          ros::Duration(0.5).sleep();
-          continue;
-      }
-      else {
+      if (result > 0) {
         ROS_INFO("Successfully started odrive communications");
         break;
       }
-  }
+    }
+    catch(const std::exception& e) {
+      if (attempt >= 4) {
+        ROS_ERROR("Could not communicate with ODrive. Exiting.");
+        return -1;
+      }
 
+      ROS_WARN("Error reading from ODrive, retrying");
+      ros::Duration(0.5).sleep();
+      continue;
+    }
+  }
 
   while (ros::ok())
   {
