@@ -194,6 +194,25 @@ namespace audio_transport
 
         memcpy( &msg.data[0], map.data, map.size );
 
+        // Build a histogram of the audio data, if there are mostly zeros, or mostly all the same value,
+        // then, the microphone is probably not plugged in.
+        int histogram[256] = {0};
+        for (int i = 0; i < map.size; i++) {
+          histogram[map.data[i]]++;
+        }
+
+        int max_count = 0;
+        for (int i = 0; i < 256; i++) {
+          if (histogram[i] > max_count) {
+            max_count = histogram[i];
+          }
+        }
+
+        if (max_count > map.size / 2) {
+          ROS_ERROR_STREAM("Received mostly zeros or all same data.  This is probably a bad connection to the microphone.");
+          return GST_FLOW_ERROR;
+        }
+
         //ROS_INFO("Buf value 0 %f", ((float *)map.data)[0]);
 
         gst_buffer_unmap(buffer, &map);
