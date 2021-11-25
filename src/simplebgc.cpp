@@ -250,6 +250,8 @@ int main(int argc, char **argv)
               bumble::HeadFeedback feedback_msg;
               feedback_msg.cur_angle_pitch = INT16_TO_DEG(realtime_data->stator_angle_pitch);
               feedback_msg.cur_angle_yaw = INT16_TO_DEG(realtime_data->stator_angle_yaw);
+              feedback_msg.motor_power_pitch = realtime_data->motor_power_pitch / 255.0f;
+              feedback_msg.motor_power_yaw = realtime_data->motor_power_yaw / 255.0f;
               feedback_msg.header.stamp = ros::Time::now();
               feedback_pub.publish(feedback_msg);
             }

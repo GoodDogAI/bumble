@@ -685,7 +685,17 @@ int main(int argc, char **argv)
 
     if (use_external_cmd_vel) {
         cmd_vel_pub.publish(last_external_cmd_vel);
-        pan = (pan_min + pan_max) / 2;
+
+        if (last_external_cmd_vel.angular.z > 0) {
+            pan = pan_min + (pan_max - pan_min) / 4;
+        }
+        else if (last_external_cmd_vel.angular.z < 0) {
+            pan = pan_max - (pan_max - pan_min) / 4;
+        }
+        else {
+            pan = (pan_min + pan_max) / 2;
+        }
+
         tilt = (tilt_min + tilt_max) / 2;
     }
     else {

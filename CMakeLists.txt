@@ -5,7 +5,6 @@ project(bumble)
 add_compile_options(-std=c++17)
 
 set(CUDA_INSTALL_DIR /usr/local/cuda)
-set(CMAKE_PREFIX_PATH "/home/robot/.local/lib/python3.6/site-packages/torch/")
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -264,7 +263,7 @@ catkin_add_gtest(${PROJECT_NAME}-test test/test_audio_processing.cpp)
 if(TARGET ${PROJECT_NAME}-test)
   target_link_libraries(${PROJECT_NAME}-test 
     ${catkin_LIBRARIES}
-    "${TORCH_LIBRARIES}"
+#    "${TORCH_LIBRARIES}"
   )
 endif()
 
