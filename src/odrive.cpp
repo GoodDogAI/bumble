@@ -250,8 +250,13 @@ int main(int argc, char **argv)
     feedback_msg.motor_vel_actual_1 = std::stof(read_string(serial_port));
     feedback_msg.motor_vel_cmd_1 = vel_right;
 
+    feedback_msg.motor_current_actual_0 = send_float_command(serial_port, "r axis0.motor.current_control.Iq_setpoint\n");
+    feedback_msg.motor_current_actual_1 = send_float_command(serial_port, "r axis1.motor.current_control.Iq_setpoint\n");
+
     feedback_msg.header.stamp = ros::Time::now();
     feedback_pub.publish(feedback_msg);
+
+    //std::cout << "Took " << ros::Time::now() - start << std::endl;     
 
     ros::spinOnce();
     loop_rate.sleep();
