@@ -132,7 +132,7 @@ int main(int argc, char **argv)
                         }
                         bt_jitters[0] = (expected_delay - actual_delay);
                         total_jitter += bt_jitters[0];
-                        ROS_INFO("read [%d,%d,%d,%d, %d,%d, %d,%d], jitter=%d", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], total_jitter);
+                        //ROS_INFO("read [%d,%d,%d,%d, %d,%d, %d,%d], jitter=%d", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], total_jitter);
                         last_bt_timestamp = current_bt_timestamp;
                         last_bt_msg_recv = now;
 
@@ -142,7 +142,7 @@ int main(int argc, char **argv)
                             if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_FORWARD)
                                 cmd_vel_msg.linear.x = override_linear_speed;
                             else if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_BACKWARD)
-                                cmd_vel_msg.linear.x = -override_linear_speed;
+                                cmd_vel_msg.linear.x = -override_linear_speed * 0.65f;
                             else
                                 cmd_vel_msg.linear.x = 0;
 

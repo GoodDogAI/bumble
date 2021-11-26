@@ -45,10 +45,7 @@ const float SPEED_MIN = -0.5;
 const float SPEED_MAX = 0.5;
 const float ROTATION_MIN = -0.5;
 const float ROTATION_MAX = 0.5;
-const float PAN_MIN = -1;
-const float PAN_MAX = 1;
-const float TILT_MIN = -1;
-const float TILT_MAX = 1;
+
 
 using namespace nvinfer1;
 
@@ -307,6 +304,51 @@ void write_intermediate_outputs(std_msgs::Float32MultiArray &yolo_intermediate,
     yolo_intermediate.layout.dim[3].stride = intermediateDims.d[3];
 }
 
+void write_output_commands(ros::Publisher cmd_vel_pub, ros::Publisher head_pub) {
+    float pan, tilt;
+
+    if (use_external_cmd_vel) {
+        cmd_vel_pub.publish(last_external_cmd_vel);
+
+        if (last_external_cmd_vel.angular.z > 0) {
+            pan = -25.0f;
+        }
+        else if (last_external_cmd_vel.angular.z < 0) {
+            pan = 25.0f;
+        }
+        else {
+            pan = 0.0f;
+        }
+
+        tilt = 0.0f;
+    }
+    else {
+        if (!external_reward_connected) {
+            cmd_vel_pub.publish(stopped_cmd_vel);
+            pan = 0.0f;
+            tilt = 30.0f;
+            ROS_INFO("Connect the rewardbutton app on your phone to start robot");
+        }
+        else if (external_reward < 0.0f) {
+            cmd_vel_pub.publish(stopped_cmd_vel);
+            pan = 0.0f;
+            tilt = -30.0f;
+            ROS_INFO("Punish button pressed, robot stopped");
+        }
+        else {
+            cmd_vel_pub.publish(last_internal_cmd_vel);
+            pan = last_internal_pan;
+            tilt = last_internal_tilt;
+        }
+    }
+
+    // Write the output to the head
+    bumble::HeadCommand head_msg;
+    head_msg.cmd_angle_pitch = tilt;
+    head_msg.cmd_angle_yaw = pan;
+    head_pub.publish(head_msg);
+}
+
 float normalize_output(float val, float low, float high) {
     return (val - low) * 2 / (high - low) - 1;
 }
@@ -320,8 +362,8 @@ float output_from_normalized(float val_normalized, float low, float high) {
 // Moves the image into an easy to work with OpenCV format.
 void cameraImageCallback(const sensor_msgs::ImageConstPtr& img)
 {
-  ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
-            img->encoding.c_str(), img->width, img->height);
+//   ROS_INFO("Received camera image with encoding %s, width %d, height %d", 
+//             img->encoding.c_str(), img->width, img->height);
 
   image_ptr = img;
 
@@ -524,6 +566,11 @@ int main(int argc, char **argv)
     ros::Time start = ros::Time::now();
 
     if (!image_ptr || ++camera_frame_skip_counter % camera_frame_skip != 0) {
+        if (image_ptr) {
+            // Write output commands here too, so that external commands get sent with low latency too
+            write_output_commands(cmd_vel_pub, head_pub);
+        }
+
         image_ptr = NULL;
         ros::spinOnce();
         loop_rate.sleep();
@@ -534,7 +581,7 @@ int main(int argc, char **argv)
     if (image_ptr) {
         // Send the current camera image to be recorded by the bag file
         camera_pub.publish(image_ptr);
-        std::cout << "Camera Publish Took " << ros::Time::now() - start << std::endl;  
+        //std::cout << "Camera Publish Took " << ros::Time::now() - start << std::endl;  
 
         float* hostInputBuffer = static_cast<float*>(yoloBuffers.getHostBuffer(INPUT_BINDING_NAME));
 
@@ -549,7 +596,7 @@ int main(int argc, char **argv)
                 hostInputBuffer[2 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j * 3 + 2] / 255.0;
             }
         }
-        std::cout << "YOLO Took " << ros::Time::now() - start << std::endl;  
+        //std::cout << "YOLO Took " << ros::Time::now() - start << std::endl;  
 
     
         // Asynchronously copy data from host input buffers to device input buffers
@@ -657,8 +704,8 @@ int main(int argc, char **argv)
         const float* actionsStdDev = static_cast<const float*>(mlpBuffers.getHostBuffer(MLP_OUTPUT_STDDEV_BINDING_NAME));
         speed = std::clamp(speed + normal_dist(gen) * actionsStdDev[0] * sampling_scale, SPEED_MIN, SPEED_MAX);
         ang = std::clamp(ang + normal_dist(gen) * actionsStdDev[1] * sampling_scale, ROTATION_MIN, ROTATION_MAX);
-        pan = std::clamp(pan + normal_dist(gen) * actionsStdDev[2] * sampling_scale, PAN_MIN, PAN_MAX);
-        tilt = std::clamp(tilt + normal_dist(gen) * actionsStdDev[3] * sampling_scale, TILT_MIN, TILT_MAX);
+        pan = std::clamp(pan + normal_dist(gen) * actionsStdDev[2] * sampling_scale, -1.0f, 1.0f);
+        tilt = std::clamp(tilt + normal_dist(gen) * actionsStdDev[3] * sampling_scale, -1.0f, 1.0f);
 
         pan = output_from_normalized(pan, pan_min, pan_max);
         tilt = output_from_normalized(tilt, tilt_min, tilt_max);
@@ -695,48 +742,7 @@ int main(int argc, char **argv)
         ros::shutdown();
     }
 
-    float pan, tilt;
-
-    if (use_external_cmd_vel) {
-        cmd_vel_pub.publish(last_external_cmd_vel);
-
-        if (last_external_cmd_vel.angular.z > 0) {
-            pan = pan_min + (pan_max - pan_min) / 4;
-        }
-        else if (last_external_cmd_vel.angular.z < 0) {
-            pan = pan_max - (pan_max - pan_min) / 4;
-        }
-        else {
-            pan = (pan_min + pan_max) / 2;
-        }
-
-        tilt = (tilt_min + tilt_max) / 2;
-    }
-    else {
-        if (!external_reward_connected) {
-            cmd_vel_pub.publish(stopped_cmd_vel);
-            pan = (pan_min + pan_max) / 2;
-            tilt = tilt_max;
-            ROS_INFO("Connect the rewardbutton app on your phone to start robot");
-        }
-        else if (external_reward < 0.0f) {
-            cmd_vel_pub.publish(stopped_cmd_vel);
-            pan = (pan_min + pan_max) / 2;
-            tilt = tilt_min;
-            ROS_INFO("Punish button pressed, robot stopped");
-        }
-        else {
-            cmd_vel_pub.publish(last_internal_cmd_vel);
-            pan = last_internal_pan;
-            tilt = last_internal_tilt;
-        }
-    }
-
-    // Write the output to the head
-    bumble::HeadCommand head_msg;
-    head_msg.cmd_angle_pitch = tilt;
-    head_msg.cmd_angle_yaw = pan;
-    head_pub.publish(head_msg);
+    write_output_commands(cmd_vel_pub, head_pub);
 
     std::cout << "Loop Took " << ros::Time::now() - start << std::endl;       
 
