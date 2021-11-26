@@ -20,8 +20,8 @@
     <!-- Set to 0.0 to disable sampling and use mean actions, set to 1.0 to sample actions using predicted standard deviations -->
     <param name="sampling_scale" value="$(arg sampling_scale)"/>
 
-    <!-- Set to how fast you'd like the update loop to run, in Hz -->
-    <param name="update_rate" value="8.0"/>
+    <!-- The loop is synced to the camera framerate, currently 15 FPS. Setting this to N will only process 1 out of every N frames -->
+    <param name="camera_frame_skip" value="2"/>
 
     <!-- How much history to store and pass into a recurrent input component -->
     <param name="mlp_input_history_size" value="8"/>

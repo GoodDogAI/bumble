@@ -415,13 +415,13 @@ int main(int argc, char **argv)
   // Publishes intermedia debug messages for verifying proper operation. 
   // Typically you would not enable this, because the bag recording will have trouble keeping up
   ros::Publisher yolo_intermediate_pub = n.advertise<std_msgs::Float32MultiArray>("yolo_intermediate", 2);
-  ros::Publisher debug_img_pub = n.advertise<sensor_msgs::Image>("yolo_img", 2);
   
   ros::Publisher brain_inputs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_inputs", 2);
   ros::Publisher brain_outputs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_outputs", 2);
   ros::Publisher brain_stddevs_pub = n.advertise<std_msgs::Float32MultiArray>("brain_stddevs", 2);
 
   ros::Subscriber camera_sub = n.subscribe("/camera/color/image_raw", 1, cameraImageCallback);
+  ros::Publisher camera_pub = n.advertise<sensor_msgs::Image>("processed_img", 2);
   
   ros::Subscriber reward_sub = n.subscribe("/reward_button", 1, rewardButtonCallback);
   ros::Subscriber reward_connected_sub = n.subscribe("/reward_button_connected", 1, rewardButtonConnectedCallback);
@@ -435,7 +435,10 @@ int main(int argc, char **argv)
   ros::Subscriber head_feedback_sub = n.subscribe("/head_feedback", 1, headFeedbackCallback);
   ros::Subscriber vbus_sub = n.subscribe("/vbus", 1, vbusCallback);
 
-  ros::Rate loop_rate(nhPriv.param<float>("update_rate", 8.0f));
+  ros::Rate loop_rate(100);
+  int32_t camera_frame_skip = nhPriv.param<int32_t>("camera_frame_skip", 1);
+  int32_t camera_frame_skip_counter = 0;
+
   int32_t mlp_input_history_size = nhPriv.param<int32_t>("mlp_input_history_size", 1);
 
   std::random_device rd;  //Will be used to obtain a seed for the random number engine
@@ -517,11 +520,22 @@ int main(int argc, char **argv)
   CHECK(cudaStreamCreate(&stream));
 
   while (ros::ok())
-  {
+  { 
     ros::Time start = ros::Time::now();
+
+    if (!image_ptr || ++camera_frame_skip_counter % camera_frame_skip != 0) {
+        image_ptr = NULL;
+        ros::spinOnce();
+        loop_rate.sleep();
+        continue;
+    }
 
     // Skip the image processing step if there is no image
     if (image_ptr) {
+        // Send the current camera image to be recorded by the bag file
+        camera_pub.publish(image_ptr);
+        std::cout << "Camera Publish Took " << ros::Time::now() - start << std::endl;  
+
         float* hostInputBuffer = static_cast<float*>(yoloBuffers.getHostBuffer(INPUT_BINDING_NAME));
 
         // Only MONO8 encoding is supported for now
@@ -535,6 +549,8 @@ int main(int argc, char **argv)
                 hostInputBuffer[2 * image_ptr->height * image_ptr->width + i * image_ptr->width + j] = image_ptr->data[i * image_ptr->step + j * 3 + 2] / 255.0;
             }
         }
+        std::cout << "YOLO Took " << ros::Time::now() - start << std::endl;  
+
     
         // Asynchronously copy data from host input buffers to device input buffers
         yoloBuffers.copyInputToDeviceAsync(stream);
@@ -549,6 +565,7 @@ int main(int argc, char **argv)
 
         // Wait for the work in the stream to complete
         cudaStreamSynchronize(stream);
+
 
         //Read back the final classifications
         const float* detectionOut = static_cast<const float*>(yoloBuffers.getHostBuffer(DETECTION_BINDING_NAME));
@@ -565,8 +582,6 @@ int main(int argc, char **argv)
             std_msgs::Float32MultiArray yolo_intermediate;
             write_intermediate_outputs(yolo_intermediate, intermediateOut, intermediateDims);
             yolo_intermediate_pub.publish(yolo_intermediate);
-
-            //debug_img_pub.publish(cv_ptr->toImageMsg());
         }
 
         // Build the input observation space
@@ -674,7 +689,6 @@ int main(int argc, char **argv)
 
         // Clear out the image pointer, so we don't reprocess this image anymore
         image_ptr = nullptr;
-        std::cout << "Took " << ros::Time::now() - start << std::endl;          
     }
     else if (last_image_received > ros::Time(0) && ros::Time::now() - last_image_received > ros::Duration(1.0)) {
         ROS_ERROR("No image received in the last second, exiting");
@@ -724,13 +738,10 @@ int main(int argc, char **argv)
     head_msg.cmd_angle_yaw = pan;
     head_pub.publish(head_msg);
 
+    std::cout << "Loop Took " << ros::Time::now() - start << std::endl;       
+
     ros::spinOnce();
     loop_rate.sleep();
-
-    if(loop_rate.cycleTime() > ros::Time::now() - start )
-        ROS_WARN("Control loop missed its desired rate of %.4fHz... the loop actually took %.4f seconds", 
-                        1.0 / loop_rate.expectedCycleTime().toSec(),
-                        loop_rate.cycleTime().toSec());
   }
 
 
