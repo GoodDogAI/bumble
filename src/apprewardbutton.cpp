@@ -84,7 +84,10 @@ int main(int argc, char **argv)
     // Track time since last connection.
     int missed_intervals = 0;
     std_msgs::Bool connected_msg;
+    ros::SteadyTime last_connected_msg_sent;
     connected_msg.data = false;
+    reward_connected.publish(connected_msg);    
+    last_connected_msg_sent = ros::SteadyTime::now();
 
     std_msgs::Bool override_cmd_vel_msg;
     override_cmd_vel_msg.data = false;
@@ -95,7 +98,6 @@ int main(int argc, char **argv)
     while(ros::ok()) {
         int ret = poll(input_fds.data(), input_fds.size(), 500);
         if (input_fds[0].revents & POLLIN) {
-
             // accept one connection
             client = accept(s, (struct sockaddr *)&rem_addr, &opt);
 
@@ -106,6 +108,11 @@ int main(int argc, char **argv)
             conn_fds.push_back({client, POLLIN, 0});
             
             while (ros::ok()) {
+                if (ros::SteadyTime::now() - last_connected_msg_sent > ros::WallDuration(1.0)) {
+                    reward_connected.publish(connected_msg);
+                    last_connected_msg_sent = ros::SteadyTime::now();
+                }
+
                 int ret = poll(conn_fds.data(), conn_fds.size(), 500);
                 if (conn_fds[0].revents & POLLIN) {
 
@@ -117,6 +124,7 @@ int main(int argc, char **argv)
                             ROS_INFO("connected");
                             connected_msg.data = true;
                             reward_connected.publish(connected_msg);
+                            last_connected_msg_sent = ros::SteadyTime::now();
                         }
                         data_msg.data = buf[0];
                         reward_raw_pub.publish(data_msg);
@@ -186,6 +194,7 @@ int main(int argc, char **argv)
                         ROS_INFO("disconnected");
                         connected_msg.data = false;
                         reward_connected.publish(connected_msg);
+                        last_connected_msg_sent = ros::SteadyTime::now();
                         break;
                     }
                 }
