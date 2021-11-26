@@ -78,11 +78,12 @@ namespace audio_transport
         }
 
         _filterconvertin = gst_element_factory_make("audioconvert", "filterconvertin");
+
+        // Set up a high pass filter to remove the noise from big mechanical bumps and such below around 200hz
         _highpass = gst_element_factory_make("audiowsinclimit", "highpass");
-        g_object_set(G_OBJECT(_highpass), "cutoff", 20.0f, NULL);
+        g_object_set(G_OBJECT(_highpass), "cutoff", 200.0f, NULL);
         g_object_set(G_OBJECT(_highpass), "length", 501, NULL); // Default is 101, 501 is a good balance for quality and performance
         g_object_set(G_OBJECT(_highpass), "mode", 1, NULL);  //Set the filter mode to high-pass, 1 = highpass, 0 = lowpass
-
 
         _amp1 = gst_element_factory_make("audioamplify", "amp1");
         g_object_set(G_OBJECT(_amp1), "amplification", 42.0f, NULL);
