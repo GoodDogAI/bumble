@@ -150,7 +150,7 @@ int main(int argc, char **argv)
   ROS_INFO("Opened SimpleBGC serial port %s", nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str());
 
   // Recenter the YAW Axis
-  uint8_t menu_cmd = SBGC_MENU_CENTER_YAW_SHORTEST;
+  uint8_t menu_cmd = SBGC_MENU_CENTER_YAW;
   send_message(serial_port, CMD_EXECUTE_MENU, &menu_cmd, 1);
 
   // Register a realtime data stream syncing up with the loop rate
@@ -168,7 +168,7 @@ int main(int argc, char **argv)
   {
     // Exit with an error if you haven't received a message in a while
     if (ros::Time::now() - bgc_last_received > ros::Duration(1.0)) {
-      ROS_ERROR("No messages received in 5 seconds, shutting down BGC subsystem");
+      ROS_ERROR("No messages received in 1 seconds, shutting down BGC subsystem");
       return 1;
     }
 
@@ -249,6 +249,15 @@ int main(int argc, char **argv)
               //     INT16_TO_DEG(realtime_data->imu_angle_yaw),
               //     INT16_TO_DEG(realtime_data->target_angle_yaw),
               //     INT16_TO_DEG(realtime_data->stator_angle_yaw));
+
+              // Send a reset command if the yaw angle has drifted out too much to correct
+              if (INT16_TO_DEG(realtime_data->imu_angle_yaw) > 120 ||
+                  INT16_TO_DEG(realtime_data->imu_angle_yaw) < -120) {
+                  ROS_WARN("Yaw angle is out of range, resetting");
+                  bgc_reset reset_cmd;
+                  memset(&reset_cmd, 0, sizeof(bgc_reset));
+                  send_message(serial_port, CMD_RESET, (uint8_t *)&reset_cmd, sizeof(reset_cmd));
+              }
 
               // Publish a feedback message with the data
               bumble::HeadFeedback feedback_msg;

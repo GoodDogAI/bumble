@@ -162,6 +162,12 @@ typedef struct __attribute__((__packed__)) {
   uint8_t reserved[9];
 } bgc_data_stream_interval;
 
+typedef struct __attribute__((__packed__)) {
+  uint8_t flags;
+  uint16_t delay_ms;
+} bgc_reset;
+
+
 #define INT16_TO_DEG(x) ((x) * 0.02197265625f)
 #define DEG_TO_INT16(x) ((x) / 0.02197265625f)
 
