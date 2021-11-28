@@ -150,7 +150,7 @@ int main(int argc, char **argv)
   ROS_INFO("Opened SimpleBGC serial port %s", nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str());
 
   // Recenter the YAW Axis
-  uint8_t menu_cmd = SBGC_MENU_CENTER_YAW;
+  uint8_t menu_cmd = SBGC_MENU_CENTER_YAW_SHORTEST;
   send_message(serial_port, CMD_EXECUTE_MENU, &menu_cmd, 1);
 
   // Register a realtime data stream syncing up with the loop rate
@@ -245,6 +245,10 @@ int main(int argc, char **argv)
             //       INT16_TO_DEG(realtime_data->imu_angle_pitch),
             //       INT16_TO_DEG(realtime_data->target_angle_pitch),
             //       INT16_TO_DEG(realtime_data->stator_angle_pitch));
+              //  ROS_INFO("Yaw %0.4f %0.4f %0.4f", 
+              //     INT16_TO_DEG(realtime_data->imu_angle_yaw),
+              //     INT16_TO_DEG(realtime_data->target_angle_yaw),
+              //     INT16_TO_DEG(realtime_data->stator_angle_yaw));
 
               // Publish a feedback message with the data
               bumble::HeadFeedback feedback_msg;
