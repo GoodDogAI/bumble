@@ -251,8 +251,8 @@ int main(int argc, char **argv)
               //     INT16_TO_DEG(realtime_data->stator_angle_yaw));
 
               // Send a reset command if the yaw angle has drifted out too much to correct
-              if (INT16_TO_DEG(realtime_data->imu_angle_yaw) > 120 ||
-                  INT16_TO_DEG(realtime_data->imu_angle_yaw) < -120) {
+              if (INT16_TO_DEG(realtime_data->imu_angle_yaw) >= 360 ||
+                  INT16_TO_DEG(realtime_data->imu_angle_yaw) <= -360) {
                   ROS_WARN("Yaw angle is out of range, resetting");
                   bgc_reset reset_cmd;
                   memset(&reset_cmd, 0, sizeof(bgc_reset));
