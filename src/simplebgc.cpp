@@ -120,6 +120,7 @@ int main(int argc, char **argv)
   ros_last_received = ros::Time::now();
 
   ros::Rate loop_rate(10);
+  int64_t num_messages_received = 0;
 
   serial_port = open(nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str(), O_RDWR | O_NOCTTY);
 
@@ -251,9 +252,10 @@ int main(int argc, char **argv)
               //     INT16_TO_DEG(realtime_data->stator_angle_yaw));
 
               // Send a reset command if the yaw angle has drifted out too much to correct
-              if (INT16_TO_DEG(realtime_data->imu_angle_yaw) >= 360 ||
-                  INT16_TO_DEG(realtime_data->imu_angle_yaw) <= -360) {
-                  ROS_WARN("Yaw angle is out of range, resetting");
+              // But only around startup time
+              if ((INT16_TO_DEG(realtime_data->imu_angle_yaw) >= 360 ||
+                  INT16_TO_DEG(realtime_data->imu_angle_yaw) <= -360) && num_messages_received < 10) {
+                  ROS_WARN("Yaw angle %f is out of range, resetting", INT16_TO_DEG(realtime_data->imu_angle_yaw));
                   bgc_reset reset_cmd;
                   memset(&reset_cmd, 0, sizeof(bgc_reset));
                   send_message(serial_port, CMD_RESET, (uint8_t *)&reset_cmd, sizeof(reset_cmd));
@@ -267,6 +269,8 @@ int main(int argc, char **argv)
               feedback_msg.motor_power_yaw = realtime_data->motor_power_yaw / 255.0f;
               feedback_msg.header.stamp = ros::Time::now();
               feedback_pub.publish(feedback_msg);
+
+              num_messages_received++;
             }
             else if (bgc_rx_msg->command_id == CMD_GET_ANGLES_EXT) {
               bgc_angles_ext *angles_ext = (bgc_angles_ext *)bgc_rx_msg->payload;
