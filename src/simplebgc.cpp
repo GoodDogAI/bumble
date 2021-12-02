@@ -25,8 +25,14 @@ ros::Time ros_last_received;
 //fd for serial port connection
 int serial_port;
 
-static float last_imu_yaw_angle = 0.0f;
-static float last_stator_yaw_angle = 0.0f;
+enum YawGyroState {
+  GYRO_INIT,
+  GYRO_WAIT_FOR_CENTER,
+  GYRO_OPERATING,
+};
+
+int8_t yaw_gyro_state = GYRO_INIT;
+bumble::HeadCommand last_head_cmd;
 
 static uint8_t bgc_state = BGC_WAITING_FOR_START_BYTE;
 static uint8_t bgc_payload_counter = 0;
@@ -76,27 +82,30 @@ void send_message(int fd, uint8_t cmd, uint8_t *payload, uint16_t payload_size) 
   write(fd, crc, sizeof(crc));
 }
 
-void head_cmd_callback(const bumble::HeadCommand::ConstPtr& msg)
+void head_cmd_callback(const bumble::HeadCommand& msg)
 {
   // Send a control command immediately to set the new position
-  bgc_control_data control_data;
-  memset(&control_data, 0, sizeof(control_data));
+  if (yaw_gyro_state == GYRO_OPERATING) {
+    bgc_control_data control_data;
+    memset(&control_data, 0, sizeof(control_data));
 
-  control_data.control_mode_roll = CONTROL_MODE_IGNORE;
-  control_data.control_mode_pitch = CONTROL_MODE_ANGLE_REL_FRAME;
-  control_data.control_mode_yaw = CONTROL_MODE_ANGLE_REL_FRAME;
-  control_data.angle_pitch = round(DEG_TO_INT16(msg->cmd_angle_pitch));
-  control_data.angle_yaw = round(DEG_TO_INT16(msg->cmd_angle_yaw));
+    control_data.control_mode_roll = CONTROL_MODE_IGNORE;
+    control_data.control_mode_pitch = CONTROL_MODE_ANGLE_REL_FRAME;
+    control_data.control_mode_yaw = CONTROL_MODE_ANGLE_REL_FRAME;
+    control_data.angle_pitch = round(DEG_TO_INT16(msg.cmd_angle_pitch));
+    control_data.angle_yaw = round(DEG_TO_INT16(msg.cmd_angle_yaw));
 
-  control_data.speed_pitch = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
-  control_data.speed_yaw = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
+    control_data.speed_pitch = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
+    control_data.speed_yaw = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
 
-  send_message(serial_port, CMD_CONTROL, (uint8_t *)&control_data, sizeof(control_data));
+    send_message(serial_port, CMD_CONTROL, (uint8_t *)&control_data, sizeof(control_data));
+  }
 
   // ROS_INFO("Received head cmd %f %d, %f %d", 
   //   msg->cmd_angle_pitch, control_data.angle_pitch,
   //   msg->cmd_angle_yaw, control_data.angle_yaw);
   
+  last_head_cmd = msg;
   ros_last_received = ros::Time::now();
 }
 
@@ -123,8 +132,7 @@ int main(int argc, char **argv)
   ros_last_received = ros::Time::now();
 
   ros::Rate loop_rate(10);
-  int64_t num_messages_received = 0;
-
+ 
   serial_port = open(nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str(), O_RDWR | O_NOCTTY);
 
   if (serial_port < 0) {
@@ -156,6 +164,10 @@ int main(int argc, char **argv)
   // Recenter the YAW Axis
   uint8_t menu_cmd = SBGC_MENU_CENTER_YAW;
   send_message(serial_port, CMD_EXECUTE_MENU, &menu_cmd, 1);
+  yaw_gyro_state = GYRO_WAIT_FOR_CENTER;
+
+  ros::Time gyro_center_start_time = ros::Time::now();
+  ROS_INFO("Waiting for YAW Gyro to center");
 
   // Register a realtime data stream syncing up with the loop rate
   bgc_data_stream_interval stream_data;
@@ -254,25 +266,24 @@ int main(int argc, char **argv)
                   INT16_TO_DEG(realtime_data->target_angle_yaw),
                   INT16_TO_DEG(realtime_data->stator_angle_yaw));
 
-              last_imu_yaw_angle = INT16_TO_DEG(realtime_data->imu_angle_yaw);
-              last_stator_yaw_angle = INT16_TO_DEG(realtime_data->stator_angle_yaw);
+              if (yaw_gyro_state == GYRO_WAIT_FOR_CENTER) {
+                if (abs(INT16_TO_DEG(realtime_data->stator_angle_yaw)) < 1.0) {
+                  yaw_gyro_state = GYRO_OPERATING;
+                  ROS_INFO("YAW Gyro centered, angle %f", INT16_TO_DEG(realtime_data->stator_angle_yaw));
+                }
+                else {
+                  if (ros::Time::now() - gyro_center_start_time > ros::Duration(5.0)) {
+                    ROS_ERROR("YAW Gyro failed to center, resetting BGC");
+                    bgc_reset reset_cmd;
+                    memset(&reset_cmd, 0, sizeof(bgc_reset));
+                    send_message(serial_port, CMD_RESET, (uint8_t *)&reset_cmd, sizeof(reset_cmd));
+                    return 1;
+                  } 
 
-              // bgc_cmd_set_adj_vars set_heading_cmd;
-              // set_heading_cmd.num_params = 1;
-              // set_heading_cmd.param_id = 37; //FRAME_HEADING_ANGLE
-              // set_heading_cmd.param_value = round(INT16_TO_DEG(realtime_data->stator_angle_yaw) * 10.0f);
-              // send_message(serial_port, CMD_SET_ADJ_VARS_VAL, (uint8_t *)&set_heading_cmd, sizeof(bgc_cmd_set_adj_vars));
-
-              // Send a reset command if the yaw angle has drifted out too much to correct
-              // But only around startup time
-              // if ((INT16_TO_DEG(realtime_data->imu_angle_yaw) >= 360 ||
-              //     INT16_TO_DEG(realtime_data->imu_angle_yaw) <= -360) && num_messages_received < 10) {
-              //     ROS_WARN("Yaw angle %f is out of range, resetting", INT16_TO_DEG(realtime_data->imu_angle_yaw));
-              //     bgc_reset reset_cmd;
-              //     memset(&reset_cmd, 0, sizeof(bgc_reset));
-              //     send_message(serial_port, CMD_RESET, (uint8_t *)&reset_cmd, sizeof(reset_cmd));
-              // }
-
+                  ROS_INFO("Waiting for YAW angle to center, please leave robot still, angle %f", INT16_TO_DEG(realtime_data->stator_angle_yaw));
+                }
+              } 
+          
               // Publish a feedback message with the data
               bumble::HeadFeedback feedback_msg;
               feedback_msg.cur_angle_pitch = INT16_TO_DEG(realtime_data->stator_angle_pitch);
@@ -281,8 +292,6 @@ int main(int argc, char **argv)
               feedback_msg.motor_power_yaw = realtime_data->motor_power_yaw / 255.0f;
               feedback_msg.header.stamp = ros::Time::now();
               feedback_pub.publish(feedback_msg);
-
-              num_messages_received++;
             }
             else if (bgc_rx_msg->command_id == CMD_GET_ANGLES_EXT) {
               bgc_angles_ext *angles_ext = (bgc_angles_ext *)bgc_rx_msg->payload;
