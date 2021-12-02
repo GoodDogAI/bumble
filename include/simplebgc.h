@@ -167,6 +167,12 @@ typedef struct __attribute__((__packed__)) {
   uint16_t delay_ms;
 } bgc_reset;
 
+typedef struct __attribute__((__packed__)) {
+  uint8_t num_params; // Set to 1 for now
+  uint8_t param_id;
+  uint32_t param_value;
+} bgc_cmd_set_adj_vars;
+
 
 #define INT16_TO_DEG(x) ((x) * 0.02197265625f)
 #define DEG_TO_INT16(x) ((x) / 0.02197265625f)

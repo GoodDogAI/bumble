@@ -25,6 +25,9 @@ ros::Time ros_last_received;
 //fd for serial port connection
 int serial_port;
 
+static float last_imu_yaw_angle = 0.0f;
+static float last_stator_yaw_angle = 0.0f;
+
 static uint8_t bgc_state = BGC_WAITING_FOR_START_BYTE;
 static uint8_t bgc_payload_counter = 0;
 static uint8_t bgc_payload_crc[2];
@@ -246,20 +249,29 @@ int main(int argc, char **argv)
             //       INT16_TO_DEG(realtime_data->imu_angle_pitch),
             //       INT16_TO_DEG(realtime_data->target_angle_pitch),
             //       INT16_TO_DEG(realtime_data->stator_angle_pitch));
-              //  ROS_INFO("Yaw %0.4f %0.4f %0.4f", 
-              //     INT16_TO_DEG(realtime_data->imu_angle_yaw),
-              //     INT16_TO_DEG(realtime_data->target_angle_yaw),
-              //     INT16_TO_DEG(realtime_data->stator_angle_yaw));
+               ROS_INFO("Yaw %0.4f %0.4f %0.4f", 
+                  INT16_TO_DEG(realtime_data->imu_angle_yaw),
+                  INT16_TO_DEG(realtime_data->target_angle_yaw),
+                  INT16_TO_DEG(realtime_data->stator_angle_yaw));
+
+              last_imu_yaw_angle = INT16_TO_DEG(realtime_data->imu_angle_yaw);
+              last_stator_yaw_angle = INT16_TO_DEG(realtime_data->stator_angle_yaw);
+
+              // bgc_cmd_set_adj_vars set_heading_cmd;
+              // set_heading_cmd.num_params = 1;
+              // set_heading_cmd.param_id = 37; //FRAME_HEADING_ANGLE
+              // set_heading_cmd.param_value = round(INT16_TO_DEG(realtime_data->stator_angle_yaw) * 10.0f);
+              // send_message(serial_port, CMD_SET_ADJ_VARS_VAL, (uint8_t *)&set_heading_cmd, sizeof(bgc_cmd_set_adj_vars));
 
               // Send a reset command if the yaw angle has drifted out too much to correct
               // But only around startup time
-              if ((INT16_TO_DEG(realtime_data->imu_angle_yaw) >= 360 ||
-                  INT16_TO_DEG(realtime_data->imu_angle_yaw) <= -360) && num_messages_received < 10) {
-                  ROS_WARN("Yaw angle %f is out of range, resetting", INT16_TO_DEG(realtime_data->imu_angle_yaw));
-                  bgc_reset reset_cmd;
-                  memset(&reset_cmd, 0, sizeof(bgc_reset));
-                  send_message(serial_port, CMD_RESET, (uint8_t *)&reset_cmd, sizeof(reset_cmd));
-              }
+              // if ((INT16_TO_DEG(realtime_data->imu_angle_yaw) >= 360 ||
+              //     INT16_TO_DEG(realtime_data->imu_angle_yaw) <= -360) && num_messages_received < 10) {
+              //     ROS_WARN("Yaw angle %f is out of range, resetting", INT16_TO_DEG(realtime_data->imu_angle_yaw));
+              //     bgc_reset reset_cmd;
+              //     memset(&reset_cmd, 0, sizeof(bgc_reset));
+              //     send_message(serial_port, CMD_RESET, (uint8_t *)&reset_cmd, sizeof(reset_cmd));
+              // }
 
               // Publish a feedback message with the data
               bumble::HeadFeedback feedback_msg;
