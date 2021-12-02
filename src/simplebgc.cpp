@@ -20,6 +20,7 @@
 #include <math.h>
 
 ros::Time bgc_last_received;
+ros::Time control_last_sent;
 ros::Time ros_last_received;
 
 //fd for serial port connection
@@ -65,7 +66,6 @@ void crc16_calculate(uint16_t length, uint8_t *data, uint8_t crc[2]) {
   crc16_update(length, data, crc);
 }
 
-
 void send_message(int fd, uint8_t cmd, uint8_t *payload, uint16_t payload_size) {
   bgc_msg *cmd_msg = (bgc_msg *)malloc(sizeof(bgc_msg) + payload_size);
   cmd_msg->command_id = cmd;
@@ -82,23 +82,28 @@ void send_message(int fd, uint8_t cmd, uint8_t *payload, uint16_t payload_size) 
   write(fd, crc, sizeof(crc));
 }
 
+void build_control_msg(const bumble::HeadCommand &head_cmd, bgc_control_data *control_data) {
+    memset(control_data, 0, sizeof(control_data));
+
+    control_data->control_mode_roll = CONTROL_MODE_IGNORE;
+    control_data->control_mode_pitch = CONTROL_MODE_ANGLE_REL_FRAME;
+    control_data->control_mode_yaw = CONTROL_MODE_ANGLE_REL_FRAME;
+    control_data->angle_pitch = round(DEG_TO_INT16(head_cmd.cmd_angle_pitch));
+    control_data->angle_yaw = round(DEG_TO_INT16(head_cmd.cmd_angle_yaw));
+
+    control_data->speed_pitch = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
+    control_data->speed_yaw = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
+}
+
 void head_cmd_callback(const bumble::HeadCommand& msg)
 {
   // Send a control command immediately to set the new position
   if (yaw_gyro_state == GYRO_OPERATING) {
     bgc_control_data control_data;
-    memset(&control_data, 0, sizeof(control_data));
-
-    control_data.control_mode_roll = CONTROL_MODE_IGNORE;
-    control_data.control_mode_pitch = CONTROL_MODE_ANGLE_REL_FRAME;
-    control_data.control_mode_yaw = CONTROL_MODE_ANGLE_REL_FRAME;
-    control_data.angle_pitch = round(DEG_TO_INT16(msg.cmd_angle_pitch));
-    control_data.angle_yaw = round(DEG_TO_INT16(msg.cmd_angle_yaw));
-
-    control_data.speed_pitch = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
-    control_data.speed_yaw = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
+    build_control_msg(msg, &control_data);
 
     send_message(serial_port, CMD_CONTROL, (uint8_t *)&control_data, sizeof(control_data));
+    control_last_sent = ros::Time::now();
   }
 
   // ROS_INFO("Received head cmd %f %d, %f %d", 
@@ -186,6 +191,18 @@ int main(int argc, char **argv)
     if (ros::Time::now() - bgc_last_received > ros::Duration(1.0)) {
       ROS_ERROR("No messages received in 1 seconds, shutting down BGC subsystem");
       return 1;
+    }
+
+    // Make sure that if the GYRO is operating, that we are sending a control command at a minimum frequency
+    if (yaw_gyro_state == GYRO_OPERATING) {
+      if (ros::Time::now() - control_last_sent > ros::Duration(0.05)) {
+        ROS_WARN("No control command received recently, sending last received command to BGC again");
+        bgc_control_data control_data;
+        build_control_msg(last_head_cmd, &control_data);
+
+        send_message(serial_port, CMD_CONTROL, (uint8_t *)&control_data, sizeof(control_data));
+        control_last_sent = ros::Time::now();
+      }
     }
 
     int ret = poll(&serial_port_poll, 1, 5);
@@ -280,7 +297,7 @@ int main(int argc, char **argv)
                     return 1;
                   } 
 
-                  ROS_INFO("Waiting for YAW angle to center, please leave robot still, angle %f", INT16_TO_DEG(realtime_data->stator_angle_yaw));
+                  ROS_WARN("Waiting for YAW angle to center, please leave robot still, angle %f", INT16_TO_DEG(realtime_data->stator_angle_yaw));
                 }
               } 
           
