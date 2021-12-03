@@ -1,7 +1,7 @@
 <launch>
   <arg name="yolo_checkpoint" default="yolov5s_v5_0_op11_rossac" />
-  <arg name="brain_checkpoint" default="sac-young-hippogriff-465-15872" />
-  <arg name="sampling_scale" default="0.0" />
+  <arg name="brain_checkpoint" default="sac-polar-hill-473-01400" />
+  <arg name="sampling_scale" default="0.2" />
  
   <include file="$(find bumble)/config/odrive.launch"/>
   <include file="$(find bumble)/config/audio.launch"/>

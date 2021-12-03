@@ -196,7 +196,6 @@ int main(int argc, char **argv)
     // Make sure that if the GYRO is operating, that we are sending a control command at a minimum frequency
     if (yaw_gyro_state == GYRO_OPERATING) {
       if (ros::Time::now() - control_last_sent > ros::Duration(0.05)) {
-        ROS_WARN("No control command received recently, sending last received command to BGC again");
         bgc_control_data control_data;
         build_control_msg(last_head_cmd, &control_data);
 
@@ -278,10 +277,10 @@ int main(int argc, char **argv)
             //       INT16_TO_DEG(realtime_data->imu_angle_pitch),
             //       INT16_TO_DEG(realtime_data->target_angle_pitch),
             //       INT16_TO_DEG(realtime_data->stator_angle_pitch));
-               ROS_INFO("Yaw %0.4f %0.4f %0.4f", 
-                  INT16_TO_DEG(realtime_data->imu_angle_yaw),
-                  INT16_TO_DEG(realtime_data->target_angle_yaw),
-                  INT16_TO_DEG(realtime_data->stator_angle_yaw));
+              //  ROS_INFO("Yaw %0.4f %0.4f %0.4f", 
+              //     INT16_TO_DEG(realtime_data->imu_angle_yaw),
+              //     INT16_TO_DEG(realtime_data->target_angle_yaw),
+              //     INT16_TO_DEG(realtime_data->stator_angle_yaw));
 
               if (yaw_gyro_state == GYRO_WAIT_FOR_CENTER) {
                 if (abs(INT16_TO_DEG(realtime_data->stator_angle_yaw)) < 1.0) {
