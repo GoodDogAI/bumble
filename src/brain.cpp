@@ -41,6 +41,8 @@
 #define OBJECT_DETECTION_THRESHOLD 0.60
 #define DEFAULT_VBUS 14.0f
 
+#define MIN_CORRECTLY_EXPOSED_IMAGES 20
+
 const float SPEED_MIN = -0.5;
 const float SPEED_MAX = 0.5;
 const float ROTATION_MIN = -0.5;
@@ -65,6 +67,9 @@ float last_internal_pan, last_internal_tilt;
 bool external_reward_connected = false;
 float external_reward = 0.0f;
 bool use_external_cmd_vel = false;
+
+uint32_t total_frames = 0;
+uint32_t total_overexposed_frames = 0;
 
 
 template <typename T>
@@ -580,6 +585,7 @@ int main(int argc, char **argv)
     // Skip the image processing step if there is no image
     if (image_ptr) {
         // Send the current camera image to be recorded by the bag file
+        total_frames++;
         camera_pub.publish(image_ptr);
         //std::cout << "Camera Publish Took " << ros::Time::now() - start << std::endl;  
 
@@ -587,6 +593,36 @@ int main(int argc, char **argv)
 
         // Only MONO8 encoding is supported for now
         assert(image_ptr->encoding == sensor_msgs::image_encodings::RGB8);
+
+        if (total_frames < MIN_CORRECTLY_EXPOSED_IMAGES * 2) {
+            uint32_t histogram[256];
+            memset(histogram, 0, sizeof(histogram));
+
+            for(int i=0; i < image_ptr->height; i++) {
+                for(int j=0; j < image_ptr->width; j++) {
+                    histogram[image_ptr->data[i * image_ptr->step + j * 3 + 0]]++;
+                    histogram[image_ptr->data[i * image_ptr->step + j * 3 + 1]]++;
+                    histogram[image_ptr->data[i * image_ptr->step + j * 3 + 2]]++;
+                }
+            }
+
+            uint32_t max_val = 0;
+
+            for(int i=0; i < 256; i++) {
+                if(histogram[i] > max_val) {
+                    max_val = histogram[i];
+                }
+            }
+
+            if (max_val > image_ptr->height * image_ptr->width / 2) {
+                ROS_WARN("Camera exposure is too dark or too light.  Please check the camera settings.");
+                total_overexposed_frames++;
+            }
+        }
+        else if (total_frames - total_overexposed_frames < MIN_CORRECTLY_EXPOSED_IMAGES) {
+            ROS_ERROR("Shutting down, camera exposure settings are too light or too dark.");
+            ros::shutdown();
+        }
         
         //NCHW format is offset_nchw(n, c, h, w) = n * CHW + c * HW + h * W + w
         for(int i=0; i < image_ptr->height; i++) {
