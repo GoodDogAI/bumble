@@ -28,6 +28,7 @@ int serial_port;
 
 enum YawGyroState {
   GYRO_INIT,
+  GYRO_WAIT_FOR_REBOOT,
   GYRO_WAIT_FOR_CENTER,
   GYRO_OPERATING,
 };
@@ -114,6 +115,7 @@ void head_cmd_callback(const bumble::HeadCommand& msg)
   ros_last_received = ros::Time::now();
 }
 
+
 /**
  * This node provides a simple interface to the ODrive module, it accepts cmd_vel messages to drive the motors,
  and publishes /vbus to report the current battery voltage
@@ -135,6 +137,8 @@ int main(int argc, char **argv)
   // shut down the motors.
   bgc_last_received = ros::Time::now();
   ros_last_received = ros::Time::now();
+
+  ros::Time gyro_center_start_time = ros::Time::now();
 
   ros::Rate loop_rate(10);
  
@@ -166,31 +170,42 @@ int main(int argc, char **argv)
 
   ROS_INFO("Opened SimpleBGC serial port %s", nhPriv.param<std::string>("serial_port", "/dev/ttyTHS0").c_str());
 
-  // Recenter the YAW Axis
-  uint8_t menu_cmd = SBGC_MENU_CENTER_YAW;
-  send_message(serial_port, CMD_EXECUTE_MENU, &menu_cmd, 1);
-  yaw_gyro_state = GYRO_WAIT_FOR_CENTER;
+  // Reset the module, so you have a clean connection to it each time
+  bgc_reset reset_cmd;
+  memset(&reset_cmd, 0, sizeof(bgc_reset));
+  send_message(serial_port, CMD_RESET, (uint8_t *)&reset_cmd, sizeof(reset_cmd));
+  ROS_INFO("Waiting for SimpleBGC to Reboot");
 
-  ros::Time gyro_center_start_time = ros::Time::now();
-  ROS_INFO("Waiting for YAW Gyro to center");
-
-  // Register a realtime data stream syncing up with the loop rate
-  bgc_data_stream_interval stream_data;
-  memset(&stream_data, 0, sizeof(bgc_data_stream_interval));
-  stream_data.cmd_id = CMD_REALTIME_DATA_4;
-  stream_data.interval_ms = loop_rate.expectedCycleTime().toSec() * 1000;
-  stream_data.sync_to_data = 0;
-
-  send_message(serial_port, CMD_DATA_STREAM_INTERVAL, (uint8_t *)&stream_data, sizeof(stream_data));
+  yaw_gyro_state = GYRO_WAIT_FOR_REBOOT;
  
   pollfd serial_port_poll = {serial_port, POLLIN, 0};
 
   while (ros::ok())
   {
-    // Exit with an error if you haven't received a message in a while
-    if (ros::Time::now() - bgc_last_received > ros::Duration(1.0)) {
-      ROS_ERROR("No messages received in 1 seconds, shutting down BGC subsystem");
-      return 1;
+    if (yaw_gyro_state == GYRO_WAIT_FOR_REBOOT) {
+      if (ros::Time::now() - bgc_last_received > ros::Duration(8.0)) {
+        ROS_INFO("Sending command to start realtime data stream for SimpleBGC");
+
+        // Register a realtime data stream syncing up with the loop rate
+        bgc_data_stream_interval stream_data;
+        memset(&stream_data, 0, sizeof(bgc_data_stream_interval));
+        stream_data.cmd_id = CMD_REALTIME_DATA_4;
+        stream_data.interval_ms = loop_rate.expectedCycleTime().toSec() * 1000;
+        stream_data.sync_to_data = 0;
+
+        send_message(serial_port, CMD_DATA_STREAM_INTERVAL, (uint8_t *)&stream_data, sizeof(stream_data));
+
+        bgc_last_received = ros::Time::now();
+        gyro_center_start_time = ros::Time::now();
+        yaw_gyro_state = GYRO_WAIT_FOR_CENTER;
+      }
+    }
+    else {
+      // Exit with an error if you haven't received a message in a while
+      if (ros::Time::now() - bgc_last_received > ros::Duration(1.0)) {
+        ROS_ERROR("No messages received in 1 seconds, shutting down BGC subsystem");
+        return 1;
+      }
     }
 
     // Make sure that if the GYRO is operating, that we are sending a control command at a minimum frequency
@@ -290,9 +305,6 @@ int main(int argc, char **argv)
                 else {
                   if (ros::Time::now() - gyro_center_start_time > ros::Duration(5.0)) {
                     ROS_ERROR("YAW Gyro failed to center, resetting BGC");
-                    bgc_reset reset_cmd;
-                    memset(&reset_cmd, 0, sizeof(bgc_reset));
-                    send_message(serial_port, CMD_RESET, (uint8_t *)&reset_cmd, sizeof(reset_cmd));
                     return 1;
                   } 
 
@@ -323,6 +335,12 @@ int main(int argc, char **argv)
             }
             else if (bgc_rx_msg->command_id == CMD_ERROR) {
                ROS_ERROR("Received CMD_ERROR from BGC");
+            }
+            else if (bgc_rx_msg->command_id == CMD_CONFIRM) {
+               // No need to do anything
+            }
+            else {
+              ROS_INFO("Received unknown message of type %d", bgc_rx_msg->command_id);
             }
           }
 

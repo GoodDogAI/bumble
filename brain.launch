@@ -1,7 +1,7 @@
 <launch>
   <arg name="yolo_checkpoint" default="yolov5s_v5_0_op11_rossac" />
-  <arg name="brain_checkpoint" default="sac-polar-hill-473-01400" />
-  <arg name="sampling_scale" default="0.2" />
+  <arg name="brain_checkpoint" default="sac-cosmic-cloud-483-26800" />
+  <arg name="sampling_scale" default="0.0" />
  
   <include file="$(find bumble)/config/odrive.launch"/>
   <include file="$(find bumble)/config/audio.launch"/>
@@ -24,7 +24,7 @@
     <param name="camera_frame_skip" value="2"/>
 
     <!-- How much history to store and pass into a recurrent input component -->
-    <param name="mlp_input_history_size" value="8"/>
+    <param name="mlp_input_history_size" value="100"/>
 
     <!-- Set to true to output intermediate yolo outputs as ROS messages -->
     <param name="log_network_outputs" value="false"/>

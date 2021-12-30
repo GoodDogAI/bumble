@@ -173,6 +173,20 @@ typedef struct __attribute__((__packed__)) {
   uint32_t param_value;
 } bgc_cmd_set_adj_vars;
 
+#define BEEPER_MODE_CALIBRATE (1<<0)
+#define BEEPER_MODE_CONFIRM (1<<1)
+#define BEEPER_MODE_ERROR (1<<2)
+#define BEEPER_MODE_CLICK (1<<4)
+#define BEEPER_MODE_COMPLETE (1<<5)
+#define BEEPER_MODE_INTRO (1<<6)
+
+typedef struct __attribute__((__packed__)) {
+  uint16_t mode;
+  uint8_t note_length;
+  uint8_t decay_factor;
+
+  uint8_t reserved[8];
+} bgc_beep_sound;
 
 #define INT16_TO_DEG(x) ((x) * 0.02197265625f)
 #define DEG_TO_INT16(x) ((x) / 0.02197265625f)
