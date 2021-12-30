@@ -337,7 +337,7 @@ void write_output_commands(ros::Publisher cmd_vel_pub, ros::Publisher head_pub) 
         else if (external_reward < 0.0f) {
             cmd_vel_pub.publish(stopped_cmd_vel);
             pan = 0.0f;
-            tilt = -30.0f;
+            tilt = 0.0f;
             ROS_INFO("Punish button pressed, robot stopped");
         }
         else {
