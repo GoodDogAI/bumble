@@ -65,6 +65,7 @@ add_message_files(
   ODriveFeedback.msg
   HeadFeedback.msg
   HeadCommand.msg
+  SoundCommand.msg
 )
 
 ## Generate services in the 'srv' folder

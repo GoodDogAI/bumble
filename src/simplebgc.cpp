@@ -4,6 +4,7 @@
 #include "geometry_msgs/Twist.h"
 #include "bumble/HeadFeedback.h"
 #include "bumble/HeadCommand.h"
+#include "bumble/SoundCommand.h"
 #include "simplebgc.h"
 #include "rawtty.h"
 
@@ -115,6 +116,18 @@ void head_cmd_callback(const bumble::HeadCommand& msg)
   ros_last_received = ros::Time::now();
 }
 
+void sound_cmd_callback(const bumble::SoundCommand& msg)
+{
+  bgc_beep_sound beep_data;
+  memset(&beep_data, 0, sizeof(bgc_beep_sound));
+
+  beep_data.mode = BEEPER_MODE_CONFIRM;
+  send_message(serial_port, CMD_BEEP_SOUND, (uint8_t *)&beep_data, sizeof(beep_data));
+
+  ros_last_received = ros::Time::now();
+}
+
+
 
 /**
  * This node provides a simple interface to the ODrive module, it accepts cmd_vel messages to drive the motors,
@@ -131,6 +144,7 @@ int main(int argc, char **argv)
   ros::NodeHandle nhPriv("~");
 
   ros::Subscriber sub = n.subscribe("head_cmd", 1, head_cmd_callback);
+  ros::Subscriber sub_sound = n.subscribe("sound_cmd", 1, sound_cmd_callback);
   ros::Publisher feedback_pub = n.advertise<bumble::HeadFeedback>("head_feedback", 1);
 
   // Set the last message received time so we know if we stop getting messages and have to 
