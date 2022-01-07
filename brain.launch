@@ -1,6 +1,6 @@
 <launch>
-  <arg name="yolo_checkpoint" default="yolov5s_v5_0_op11_rossac" />
-  <arg name="brain_checkpoint" default="sac-cosmic-cloud-483-26800" />
+  <arg name="yolo_checkpoint" default="yolov5l_6_0_op11_rossac" />
+  <arg name="brain_checkpoint" default="sac-super-durian-492-03200" />
   <arg name="sampling_scale" default="0.0" />
  
   <include file="$(find bumble)/config/odrive.launch"/>

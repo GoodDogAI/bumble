@@ -30,10 +30,12 @@
 
 #define INPUT_BINDING_NAME "images"
 #define DETECTION_BINDING_NAME "output"
-#define INTERMEDIATE_LAYER_BINDING_NAME "361"
+#define INTERMEDIATE_LAYER_BINDING_NAME "532"
 
 #define MLP_INPUT_BINDING_NAME "yolo_intermediate"
-#define MLP_INPUT_SIZE 990
+#define MLP_INPUT_SIZE 1968 
+// 1968 = Used for yolov5l with ::157
+//#define MLP_INPUT_SIZE 990 // Used for yolov5s with ::157
 //#define MLP_INPUT_SIZE 5308
 #define MLP_OUTPUT_BINDING_NAME "actions"
 #define MLP_OUTPUT_STDDEV_BINDING_NAME "stddev"
@@ -700,7 +702,14 @@ int main(int argc, char **argv)
             for (int i = 0; i < MLP_INPUT_SIZE - 11; i++) {
                 mlp_input[11 + i] = intermediateOut[i * 29];
             }
+        #elif MLP_INPUT_SIZE == 1968
+            for (int i = 0; i < MLP_INPUT_SIZE - 11; i++) {
+                mlp_input[11 + i] = intermediateOut[i * 157];
+            }
+        #else
+            #error "MLP_INPUT_SIZE is not defined correctly"
         #endif
+
 
         // Put the newly constructed observation into the mlp_input_history buffer
         mlp_input_history.push_back(mlp_input);
@@ -756,19 +765,22 @@ int main(int argc, char **argv)
         last_internal_tilt = tilt;
 
         // Publish the brain IOs so we can make sure they match up with what we are passing in during training
-        std_msgs::Float32MultiArray brain_inputs_msg;
-        brain_inputs_msg.data = std::vector<float>(mlpInputBuffer, mlpInputBuffer + (mlp_input_history.size() * MLP_INPUT_SIZE));
-        brain_inputs_pub.publish(brain_inputs_msg);
+        // You can do this every N messages, to reduce bandwidth and storage requirements
+        if (total_frames % 10 == 0) {
+            std_msgs::Float32MultiArray brain_inputs_msg;
+            brain_inputs_msg.data = std::vector<float>(mlpInputBuffer, mlpInputBuffer + (mlp_input_history.size() * MLP_INPUT_SIZE));
+            brain_inputs_pub.publish(brain_inputs_msg);
 
-        std_msgs::Float32MultiArray brain_outputs_msg;
-        brain_outputs_msg.data = std::vector<float>(mlpOutput, 
-                                                    mlpOutput + mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_OUTPUT_BINDING_NAME)).d[1]);
-        brain_outputs_pub.publish(brain_outputs_msg);
+            std_msgs::Float32MultiArray brain_outputs_msg;
+            brain_outputs_msg.data = std::vector<float>(mlpOutput, 
+                                                        mlpOutput + mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_OUTPUT_BINDING_NAME)).d[1]);
+            brain_outputs_pub.publish(brain_outputs_msg);
 
-        std_msgs::Float32MultiArray brain_stddevs_msg;
-        brain_stddevs_msg.data = std::vector<float>(actionsStdDev, 
-                                                    actionsStdDev + mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_OUTPUT_STDDEV_BINDING_NAME)).d[1]);
-        brain_stddevs_pub.publish(brain_stddevs_msg);
+            std_msgs::Float32MultiArray brain_stddevs_msg;
+            brain_stddevs_msg.data = std::vector<float>(actionsStdDev, 
+                                                        actionsStdDev + mlpContext->getBindingDimensions(mlpEngine->getBindingIndex(MLP_OUTPUT_STDDEV_BINDING_NAME)).d[1]);
+            brain_stddevs_pub.publish(brain_stddevs_msg);
+        }
 
         // Clear out the image pointer, so we don't reprocess this image anymore
         image_ptr = nullptr;
