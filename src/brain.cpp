@@ -12,6 +12,7 @@
 #include "geometry_msgs/Twist.h"
 #include "bumble/HeadFeedback.h"
 #include "bumble/HeadCommand.h"
+#include "bumble/SoundCommand.h"
 #include "bumble/ODriveFeedback.h"
 
 #include <boost/make_shared.hpp>
@@ -311,7 +312,7 @@ void write_intermediate_outputs(std_msgs::Float32MultiArray &yolo_intermediate,
     yolo_intermediate.layout.dim[3].stride = intermediateDims.d[3];
 }
 
-void write_output_commands(ros::Publisher cmd_vel_pub, ros::Publisher head_pub) {
+void write_output_commands(ros::Publisher cmd_vel_pub, ros::Publisher head_pub, ros::Publisher sound_pub) {
     float pan, tilt;
 
     if (use_external_cmd_vel) {
@@ -340,6 +341,11 @@ void write_output_commands(ros::Publisher cmd_vel_pub, ros::Publisher head_pub) 
             cmd_vel_pub.publish(stopped_cmd_vel);
             pan = 0.0f;
             tilt = 0.0f;
+
+            bumble::SoundCommand sound_cmd;
+            sound_cmd.sound = bumble::SoundCommand::PUNISHED;
+            sound_pub.publish(sound_cmd);
+
             ROS_INFO("Punish button pressed, robot stopped");
         }
         else {
@@ -460,6 +466,7 @@ int main(int argc, char **argv)
 
   ros::Publisher cmd_vel_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
   ros::Publisher head_pub = n.advertise<bumble::HeadCommand>("head_cmd", 1);
+  ros::Publisher sound_pub = n.advertise<bumble::SoundCommand>("sound_cmd", 1);
 
   // Publishes intermedia debug messages for verifying proper operation. 
   // Typically you would not enable this, because the bag recording will have trouble keeping up
@@ -575,7 +582,7 @@ int main(int argc, char **argv)
     if (!image_ptr || ++camera_frame_skip_counter % camera_frame_skip != 0) {
         if (image_ptr) {
             // Write output commands here too, so that external commands get sent with low latency too
-            write_output_commands(cmd_vel_pub, head_pub);
+            write_output_commands(cmd_vel_pub, head_pub, sound_pub);
         }
 
         image_ptr = NULL;
@@ -790,7 +797,7 @@ int main(int argc, char **argv)
         ros::shutdown();
     }
 
-    write_output_commands(cmd_vel_pub, head_pub);
+    write_output_commands(cmd_vel_pub, head_pub, sound_pub);
 
     std::cout << "Loop Took " << ros::Time::now() - start << std::endl;       
 
