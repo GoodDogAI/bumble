@@ -20,12 +20,10 @@
 #define BUF_SCORE_MESSAGE 0x02
 
 #define BUF_SCORE_INDEX 5
-#define BUF_CMD_VEL_ACTION_INDEX 5
+#define BUF_CMD_VEL_LINEAR_X_INDEX 5
+#define BUF_CMD_VEL_ANGULAR_Z_INDEX 6
 
-#define BUF_CMD_VEL_ACTION_FORWARD 1
-#define BUF_CMD_VEL_ACTION_BACKWARD 2
-#define BUF_CMD_VEL_ACTION_LEFT 4
-#define BUF_CMD_VEL_ACTION_RIGHT 8
+
 
 
 int main(int argc, char **argv)
@@ -146,20 +144,8 @@ int main(int argc, char **argv)
 
                         if (buf[BUF_DISCRIMINANT_INDEX] == BUF_MOVE_MESSAGE) {
                             geometry_msgs::Twist cmd_vel_msg;
-
-                            if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_FORWARD)
-                                cmd_vel_msg.linear.x = override_linear_speed;
-                            else if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_BACKWARD)
-                                cmd_vel_msg.linear.x = -override_linear_speed * 0.65f;
-                            else
-                                cmd_vel_msg.linear.x = 0;
-
-                            if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_LEFT)
-                                cmd_vel_msg.angular.z = override_angular_speed;
-                            else if (buf[BUF_CMD_VEL_ACTION_INDEX] & BUF_CMD_VEL_ACTION_RIGHT)
-                                cmd_vel_msg.angular.z = -override_angular_speed;
-                            else
-                                cmd_vel_msg.angular.z = 0;
+                            cmd_vel_msg.linear.x = ((int8_t)buf[BUF_CMD_VEL_LINEAR_X_INDEX]) / 127.0F * override_linear_speed;
+                            cmd_vel_msg.angular.z = ((int8_t)buf[BUF_CMD_VEL_ANGULAR_Z_INDEX]) / 127.0F * override_angular_speed;
                             
                             reward_cmd_vel_pub.publish(cmd_vel_msg);
                             override_cmd_vel_msg.data = true;

@@ -84,14 +84,25 @@ void send_message(int fd, uint8_t cmd, uint8_t *payload, uint16_t payload_size) 
   write(fd, crc, sizeof(crc));
 }
 
+int16_t degree_to_int16(float angle) {
+   float result = round(DEG_TO_INT16(angle));
+
+   if (result <= -32768)
+     return -32768;
+   else if (result >= 32767)
+     return 32767;
+   else
+     return result;
+}
+
 void build_control_msg(const bumble::HeadCommand &head_cmd, bgc_control_data *control_data) {
     memset(control_data, 0, sizeof(control_data));
 
     control_data->control_mode_roll = CONTROL_MODE_IGNORE;
     control_data->control_mode_pitch = CONTROL_MODE_ANGLE_REL_FRAME;
     control_data->control_mode_yaw = CONTROL_MODE_ANGLE_REL_FRAME;
-    control_data->angle_pitch = round(DEG_TO_INT16(head_cmd.cmd_angle_pitch));
-    control_data->angle_yaw = round(DEG_TO_INT16(head_cmd.cmd_angle_yaw));
+    control_data->angle_pitch = degree_to_int16(head_cmd.cmd_angle_pitch);
+    control_data->angle_yaw = degree_to_int16(head_cmd.cmd_angle_yaw);
 
     control_data->speed_pitch = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 
     control_data->speed_yaw = round(200.0f / CONTROL_SPEED_DEG_PER_SEC_PER_UNIT); 

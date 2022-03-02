@@ -318,16 +318,7 @@ void write_output_commands(ros::Publisher cmd_vel_pub, ros::Publisher head_pub, 
     if (use_external_cmd_vel) {
         cmd_vel_pub.publish(last_external_cmd_vel);
 
-        if (last_external_cmd_vel.angular.z > 0) {
-            pan = -25.0f;
-        }
-        else if (last_external_cmd_vel.angular.z < 0) {
-            pan = 25.0f;
-        }
-        else {
-            pan = 0.0f;
-        }
-
+        pan = -100.0f * last_external_cmd_vel.angular.z;
         tilt = 0.0f;
     }
     else {
