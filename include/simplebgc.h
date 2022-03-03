@@ -179,6 +179,7 @@ typedef struct __attribute__((__packed__)) {
 #define BEEPER_MODE_CLICK (1<<4)
 #define BEEPER_MODE_COMPLETE (1<<5)
 #define BEEPER_MODE_INTRO (1<<6)
+#define BEEPER_MODE_CUSTOM_MELODY (1<<15)
 
 typedef struct __attribute__((__packed__)) {
   uint16_t mode;
@@ -186,7 +187,17 @@ typedef struct __attribute__((__packed__)) {
   uint8_t decay_factor;
 
   uint8_t reserved[8];
-} bgc_beep_sound;
+} bgc_beep_builtin_sound;
+
+typedef struct __attribute__((__packed__)) {
+  uint16_t mode;
+  uint8_t note_length;
+  uint8_t decay_factor;
+
+  uint8_t reserved[8];
+
+  uint16_t notes[2];
+} bgc_beep_custom_sound;
 
 #define INT16_TO_DEG(x) ((x) * 0.02197265625f)
 #define DEG_TO_INT16(x) ((x) / 0.02197265625f)

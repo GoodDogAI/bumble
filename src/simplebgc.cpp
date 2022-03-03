@@ -23,6 +23,7 @@
 ros::Time bgc_last_received;
 ros::Time control_last_sent;
 ros::Time ros_last_received;
+ros::Time last_sound;
 
 //fd for serial port connection
 int serial_port;
@@ -129,12 +130,33 @@ void head_cmd_callback(const bumble::HeadCommand& msg)
 
 void sound_cmd_callback(const bumble::SoundCommand& msg)
 {
-  bgc_beep_sound beep_data;
-  memset(&beep_data, 0, sizeof(bgc_beep_sound));
+  if (ros::Time::now() - last_sound < ros::Duration(2.0)) {
+    return;
+  }
 
-  beep_data.mode = BEEPER_MODE_CONFIRM;
-  send_message(serial_port, CMD_BEEP_SOUND, (uint8_t *)&beep_data, sizeof(beep_data));
+  bgc_beep_custom_sound beep_data;
+  memset(&beep_data, 0, sizeof(bgc_beep_custom_sound));
 
+  beep_data.mode = BEEPER_MODE_CUSTOM_MELODY;
+  beep_data.note_length = 20;
+  beep_data.decay_factor = 10;
+
+  if (msg.sound == bumble::SoundCommand::PUNISHED) {
+    beep_data.notes[0] = 2000;
+    beep_data.notes[1] = 1000;
+  }
+  else if (msg.sound == bumble::SoundCommand::REWARDED) {
+    beep_data.notes[0] = 1000;
+    beep_data.notes[1] = 2000;
+  }
+  else {
+    beep_data.notes[0] = 800;
+    beep_data.notes[1] = 800;
+  }
+
+  send_message(serial_port, CMD_BEEP_SOUND, (uint8_t *)&beep_data, sizeof(bgc_beep_custom_sound));
+
+  last_sound = ros::Time::now();
   ros_last_received = ros::Time::now();
 }
 

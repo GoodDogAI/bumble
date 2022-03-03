@@ -339,6 +339,12 @@ void write_output_commands(ros::Publisher cmd_vel_pub, ros::Publisher head_pub, 
 
             ROS_INFO("Punish button pressed, robot stopped");
         }
+        else if (external_reward > 0.0f) {
+            bumble::SoundCommand sound_cmd;
+            sound_cmd.sound = bumble::SoundCommand::REWARDED;
+            sound_pub.publish(sound_cmd);
+
+        }
         else {
             cmd_vel_pub.publish(last_internal_cmd_vel);
             pan = last_internal_pan;
