@@ -679,36 +679,42 @@ int main(int argc, char **argv)
         // Normalized pan and tilt, current orientation
         mlp_input[0] = normalize_output(last_head_feedback.cur_angle_yaw, pan_min, pan_max);
         mlp_input[1] = normalize_output(last_head_feedback.cur_angle_pitch, tilt_min, tilt_max);
+        mlp_input[2] = last_head_feedback.motor_power_yaw;
+        mlp_input[3] = last_head_feedback.motor_power_pitch;
 
         // Head gyro
-        mlp_input[2] = last_head_orientation.angular_velocity.x / 10.0f;
-        mlp_input[3] = last_head_orientation.angular_velocity.y / 10.0f;
-        mlp_input[4] = last_head_orientation.angular_velocity.z / 10.0f;
+        mlp_input[4] = last_head_orientation.angular_velocity.x / 10.0f;
+        mlp_input[5] = last_head_orientation.angular_velocity.y / 10.0f;
+        mlp_input[6] = last_head_orientation.angular_velocity.z / 10.0f;
 
         // Head accel
-        mlp_input[5] = last_head_orientation.linear_acceleration.x / 10.0f;
-        mlp_input[6] = last_head_orientation.linear_acceleration.y / 10.0f;
-        mlp_input[7] = last_head_orientation.linear_acceleration.z / 10.0f;
+        mlp_input[7] = last_head_orientation.linear_acceleration.x / 10.0f;
+        mlp_input[8] = last_head_orientation.linear_acceleration.y / 10.0f;
+        mlp_input[9] = last_head_orientation.linear_acceleration.z / 10.0f;
 
         // ODrive feedback
-        mlp_input[8] = last_odrive_feedback.motor_vel_actual_0;
-        mlp_input[9] = last_odrive_feedback.motor_vel_actual_1;
+        mlp_input[10] = last_odrive_feedback.motor_vel_actual_0;
+        mlp_input[11] = last_odrive_feedback.motor_vel_actual_1;
+        mlp_input[12] = last_odrive_feedback.motor_vel_cmd_0;
+        mlp_input[13] = last_odrive_feedback.motor_vel_cmd_1;
+        mlp_input[14] = last_odrive_feedback.motor_current_actual_0;
+        mlp_input[15] = last_odrive_feedback.motor_current_actual_1;
 
         // Vbus
-        mlp_input[10] = last_vbus - DEFAULT_VBUS;
+        mlp_input[16] = last_vbus - DEFAULT_VBUS;
     
         //Copy every 157st element into the SAC model
         #if MLP_INPUT_SIZE == 990
             for (int i = 0; i < MLP_INPUT_SIZE - 11; i++) {
-                mlp_input[11 + i] = intermediateOut[i * 157];
+                mlp_input[17 + i] = intermediateOut[i * 157];
             }
         #elif MLP_INPUT_SIZE == 5308
             for (int i = 0; i < MLP_INPUT_SIZE - 11; i++) {
-                mlp_input[11 + i] = intermediateOut[i * 29];
+                mlp_input[17 + i] = intermediateOut[i * 29];
             }
         #elif MLP_INPUT_SIZE == 1968
             for (int i = 0; i < MLP_INPUT_SIZE - 11; i++) {
-                mlp_input[11 + i] = intermediateOut[i * 157];
+                mlp_input[17 + i] = intermediateOut[i * 157];
             }
         #else
             #error "MLP_INPUT_SIZE is not defined correctly"
