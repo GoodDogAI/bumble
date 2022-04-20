@@ -34,7 +34,7 @@
 #define INTERMEDIATE_LAYER_BINDING_NAME "532"
 
 #define MLP_INPUT_BINDING_NAME "yolo_intermediate"
-#define MLP_INPUT_SIZE 1974
+#define MLP_INPUT_SIZE 1975
 // 1968 = Used for yolov5l with ::157
 //#define MLP_INPUT_SIZE 990 // Used for yolov5s with ::157
 //#define MLP_INPUT_SIZE 5308
@@ -702,19 +702,22 @@ int main(int argc, char **argv)
 
         // Vbus
         mlp_input[16] = last_vbus - DEFAULT_VBUS;
+
+        // Last reward
+        mlp_input[17] = external_reward;
     
         //Copy every 157st element into the SAC model
         #if MLP_INPUT_SIZE == 990
-            for (int i = 0; i < MLP_INPUT_SIZE - 17; i++) {
-                mlp_input[17 + i] = intermediateOut[i * 157];
+            for (int i = 0; i < MLP_INPUT_SIZE - 18; i++) {
+                mlp_input[18 + i] = intermediateOut[i * 157];
             }
         #elif MLP_INPUT_SIZE == 5308
-            for (int i = 0; i < MLP_INPUT_SIZE - 17; i++) {
-                mlp_input[17 + i] = intermediateOut[i * 29];
+            for (int i = 0; i < MLP_INPUT_SIZE - 18; i++) {
+                mlp_input[18 + i] = intermediateOut[i * 29];
             }
-        #elif MLP_INPUT_SIZE == 1974
-            for (int i = 0; i < MLP_INPUT_SIZE - 17; i++) {
-                mlp_input[17 + i] = intermediateOut[i * 157];
+        #elif MLP_INPUT_SIZE == 1975
+            for (int i = 0; i < MLP_INPUT_SIZE - 18; i++) {
+                mlp_input[18 + i] = intermediateOut[i * 157];
             }
         #else
             #error "MLP_INPUT_SIZE is not defined correctly"
