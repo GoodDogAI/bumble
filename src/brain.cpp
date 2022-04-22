@@ -10,6 +10,7 @@
 #include "sensor_msgs/image_encodings.h"
 #include "sensor_msgs/Imu.h"
 #include "geometry_msgs/Twist.h"
+#include "geometry_msgs/Vector3.h"
 #include "bumble/HeadFeedback.h"
 #include "bumble/HeadCommand.h"
 #include "bumble/SoundCommand.h"
@@ -34,7 +35,7 @@
 #define INTERMEDIATE_LAYER_BINDING_NAME "532"
 
 #define MLP_INPUT_BINDING_NAME "yolo_intermediate"
-#define MLP_INPUT_SIZE 1975
+#define MLP_INPUT_SIZE 2017
 // 1968 = Used for yolov5l with ::157
 //#define MLP_INPUT_SIZE 990 // Used for yolov5s with ::157
 //#define MLP_INPUT_SIZE 5308
@@ -57,7 +58,8 @@ using namespace nvinfer1;
 sensor_msgs::ImageConstPtr image_ptr;
 
 ros::Time last_image_received;
-sensor_msgs::Imu last_head_orientation;
+std::deque<geometry_msgs::Vector3> last_head_gyros;
+std::deque<geometry_msgs::Vector3> last_head_accels;
 bumble::ODriveFeedback last_odrive_feedback;
 bumble::HeadFeedback last_head_feedback;
 float last_vbus = DEFAULT_VBUS;
@@ -417,17 +419,13 @@ void headFeedbackCallback(const bumble::HeadFeedback& msg)
 // Called when you receive an accelerometer message from the real sense camera
 void accelCallback(const sensor_msgs::Imu& msg) 
 {
-    last_head_orientation.linear_acceleration.x = msg.linear_acceleration.x;
-    last_head_orientation.linear_acceleration.y = msg.linear_acceleration.y;
-    last_head_orientation.linear_acceleration.z = msg.linear_acceleration.z;
+    last_head_accels.push_back(msg.linear_acceleration);
 }
 
 // Called when you receive an gyro message from the real sense camera
 void gyroCallback(const sensor_msgs::Imu& msg) 
 {
-    last_head_orientation.angular_velocity.x = msg.angular_velocity.x;
-    last_head_orientation.angular_velocity.y = msg.angular_velocity.y;
-    last_head_orientation.angular_velocity.z = msg.angular_velocity.z;
+    last_head_gyros.push_back(msg.angular_velocity);
 }
 
 // Called you when receive informatiom about the current state of the motors via the Odrive interface
@@ -576,7 +574,7 @@ int main(int argc, char **argv)
   { 
     ros::Time start = ros::Time::now();
 
-    if (!image_ptr || ++camera_frame_skip_counter % camera_frame_skip != 0) {
+    if (!image_ptr || ++camera_frame_skip_counter % camera_frame_skip != 0 || last_head_accels.size() < 10 || last_head_gyros.size() < 10) {
         if (image_ptr) {
             // Write output commands here too, so that external commands get sent with low latency too
             write_output_commands(cmd_vel_pub, head_pub, sound_pub);
@@ -683,45 +681,49 @@ int main(int argc, char **argv)
         mlp_input[3] = last_head_feedback.motor_power_pitch;
 
         // Head gyro
-        mlp_input[4] = last_head_orientation.angular_velocity.x / 10.0f;
-        mlp_input[5] = last_head_orientation.angular_velocity.y / 10.0f;
-        mlp_input[6] = last_head_orientation.angular_velocity.z / 10.0f;
+        for (int i = 0; i < 8; i++) {
+            mlp_input[4 + i * 3] = last_head_gyros[std::max((size_t)0, last_head_gyros.size() - 1 - i)].x / 10.0f;
+            mlp_input[5 + i * 3] = last_head_gyros[std::max((size_t)0, last_head_gyros.size() - 1 - i)].y / 10.0f;
+            mlp_input[6 + i * 3] = last_head_gyros[std::max((size_t)0, last_head_gyros.size() - 1 - i)].z / 10.0f;
+        }
 
         // Head accel
-        mlp_input[7] = last_head_orientation.linear_acceleration.x / 10.0f;
-        mlp_input[8] = last_head_orientation.linear_acceleration.y / 10.0f;
-        mlp_input[9] = last_head_orientation.linear_acceleration.z / 10.0f;
-
+        for (int i = 0; i < 8; i++) {
+            mlp_input[28 + i * 3] = last_head_accels[std::max((size_t)0, last_head_accels.size() - 1 - i)].x / 10.0f;
+            mlp_input[29 + i * 3] = last_head_accels[std::max((size_t)0, last_head_accels.size() - 1 - i)].y / 10.0f;
+            mlp_input[30 + i * 3] = last_head_accels[std::max((size_t)0, last_head_accels.size() - 1 - i)].z / 10.0f;
+        }
+   
         // ODrive feedback
-        mlp_input[10] = last_odrive_feedback.motor_vel_actual_0;
-        mlp_input[11] = last_odrive_feedback.motor_vel_actual_1;
-        mlp_input[12] = last_odrive_feedback.motor_vel_cmd_0;
-        mlp_input[13] = last_odrive_feedback.motor_vel_cmd_1;
-        mlp_input[14] = last_odrive_feedback.motor_current_actual_0;
-        mlp_input[15] = last_odrive_feedback.motor_current_actual_1;
+        mlp_input[52] = last_odrive_feedback.motor_vel_actual_0;
+        mlp_input[53] = last_odrive_feedback.motor_vel_actual_1;
+        mlp_input[54] = last_odrive_feedback.motor_vel_cmd_0;
+        mlp_input[55] = last_odrive_feedback.motor_vel_cmd_1;
+        mlp_input[56] = last_odrive_feedback.motor_current_actual_0;
+        mlp_input[57] = last_odrive_feedback.motor_current_actual_1;
 
         // Vbus
-        mlp_input[16] = last_vbus - DEFAULT_VBUS;
+        mlp_input[58] = last_vbus - DEFAULT_VBUS;
 
         // Last reward
-        mlp_input[17] = external_reward;
+        mlp_input[59] = external_reward;
     
         //Copy every 157st element into the SAC model
         #if MLP_INPUT_SIZE == 990
-            for (int i = 0; i < MLP_INPUT_SIZE - 18; i++) {
-                mlp_input[18 + i] = intermediateOut[i * 157];
+            for (int i = 0; i < MLP_INPUT_SIZE - 60; i++) {
+                mlp_input[60 + i] = intermediateOut[i * 157];
             }
         #elif MLP_INPUT_SIZE == 5308
-            for (int i = 0; i < MLP_INPUT_SIZE - 18; i++) {
-                mlp_input[18 + i] = intermediateOut[i * 29];
+            for (int i = 0; i < MLP_INPUT_SIZE - 60; i++) {
+                mlp_input[60 + i] = intermediateOut[i * 29];
             }
-        #elif MLP_INPUT_SIZE == 1975
-            for (int i = 0; i < MLP_INPUT_SIZE - 18; i++) {
-                mlp_input[18 + i] = intermediateOut[i * 157];
+        #elif MLP_INPUT_SIZE == 2017
+            for (int i = 0; i < MLP_INPUT_SIZE - 60; i++) {
+                mlp_input[60 + i] = intermediateOut[i * 157];
             }
         #else
             #error "MLP_INPUT_SIZE is not defined correctly"
-        #endif
+        #endif 
 
 
         // Put the newly constructed observation into the mlp_input_history buffer
@@ -730,6 +732,14 @@ int main(int argc, char **argv)
         while (mlp_input_history.size() > mlp_input_history_size) {
             mlp_input_history.pop_front();
         }
+
+        // while(last_head_accels.size() > 10){
+        //     last_head_accels.pop_front();
+        // }
+
+        // while(last_head_gyros.size() > 10){
+        //     last_head_accels.pop_front();
+        // }
 
         // Copy the mlp_input_history buffer
         float* mlpInputBuffer = static_cast<float*>(mlpBuffers.getHostBuffer(MLP_INPUT_BINDING_NAME));

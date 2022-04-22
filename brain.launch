@@ -13,7 +13,7 @@
   </include>
 
   
-  <node name="brain" pkg="bumble" type="brain" required="true" output="screen">
+  <node name="brain" pkg="bumble" type="brain" required="true" output="screen" >
     <param name="tensorrt_yolo" value="/home/robot/$(arg yolo_checkpoint).onnx"/>
     <param name="tensorrt_brain" value="/home/robot/$(arg brain_checkpoint).onnx"/>
 
